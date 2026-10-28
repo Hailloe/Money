@@ -278,5 +278,8 @@ a.plain:hover{text-decoration:underline}
 }
 .hero-row .v,.temp .v{white-space:nowrap}
 .temp .v{font-size:clamp(19px,5.5vw,24px)}
-td .cellname{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+td .cellname{display:inline-flex;align-items:center;gap:6px;flex-wrap:nowrap;max-width:100%}
+td .cellname .dot{flex:none}
+td .cellname a.plain{min-width:0;overflow-wrap:anywhere}
+td .cellname .tag{flex:none}
 @media (max-width:899px){td .cellname{min-height:44px}td .cellname a.plain{padding-block:12px}}

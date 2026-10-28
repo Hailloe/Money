@@ -350,7 +350,9 @@ function analyze() {
   adv.filter(x => x.adv.t === '转出补仓').forEach(x => {
     // 不超过：超出部分的三分之一、能买进去的空间、余额宝余额扣掉本月定投要取的部分
     const room = Math.max(0, capacity - sellFreed), amt = Math.round(Math.max(0, Math.min(x.adv.excess / R.sellMonths, room, x.amount - extra)));
-    if (amt < 1) x.adv = { k: 'hold', t: '持有', amt: 0, why: [`余额宝放了 ${w2.cash.toFixed(0)}%，比目标多，但现在占比不够的类别要么估值很贵、要么已经补满，先放着，等能买的时候再转出。`] };
+    if (amt < 1) x.adv = extra >= 1
+      ? { k: 'move', t: '取出定投', amt: Math.round(Math.min(extra, x.amount)), why: [`本月定投多买的部分从余额宝里取 ${fmt(Math.min(extra, x.amount))}。`, '余额宝比目标多，但现在占比不够的类别要么估值很贵、要么已经补满，剩下的先放着。'] }
+      : { k: 'hold', t: '持有', amt: 0, why: [`余额宝放了 ${w2.cash.toFixed(0)}%，比目标多，但现在占比不够的类别要么估值很贵、要么已经补满，先放着，等能买的时候再转出。`] };
     else x.adv = { k: 'move', t: '转出补仓', amt: Math.round(amt + extra), why: x.adv.why.concat(extra > 0
       ? `这个月一共从余额宝取 ${fmt(amt + extra)}：其中 ${fmt(amt)} 按下面“本月卖出的钱怎么买”去买，${fmt(extra)} 用在本月定投多买的部分。`
       : `这个月转出 ${fmt(amt)}，按下面“本月卖出的钱怎么买”去买。`) };
@@ -485,7 +487,7 @@ const actChip = a => `<span class="act ${a.k}">${esc(a.t)}</span>`;
 const sigChip = s => `<span class="act ${s.k}">${esc(s.t)}</span>`;
 function amtLine(a) {
   if (!a.amt) return '';
-  const verb = a.k === 'move' ? '转出' : a.k === 'buy' ? (a.t === '开始存入' ? '存入' : '买入') : a.k === 'sell' ? '卖出' : a.k === 'swap' ? '换掉' : '';
+  const verb = a.k === 'move' ? '取出' : a.k === 'buy' ? (a.t === '开始存入' ? '存入' : '买入') : a.k === 'sell' ? '卖出' : a.k === 'swap' ? '换掉' : '';
   return `<span class="n ${a.k === 'buy' ? 'up' : a.k === 'sell' ? 'down' : ''}">${verb} ${fmt(a.amt)}</span>`;
 }
 const exampleBanner = () => P.example ? `<div class="banner"><span>现在显示的是<b>示例持仓</b>，不是你的。录入你在支付宝里的持仓后，所有分析都会换成你自己的。</span><a class="btn sm" href="#holdings">录入我的持仓</a></div>` : '';
