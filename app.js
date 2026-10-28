@@ -470,8 +470,8 @@ function viewAnalysis(A) {
   </section>
   </div>
   ${(M.hs300Hist && M.hs300Hist.length) || (M.divLowVolHist && M.divLowVolHist.length) ? `<div class="grid2">
-    <section class="card"><div class="card-h"><h3>沪深300 逐年涨跌</h3><span class="sub">指数，红涨绿跌</span></div>${yearBars(M.hs300Hist)}</section>
-    <section class="card"><div class="card-h"><h3>红利低波 逐年涨跌</h3><span class="sub">指数，红涨绿跌</span></div>${yearBars(M.divLowVolHist)}</section></div>` : ''}
+    <section class="card"><div class="card-h"><h3>沪深300 逐年涨跌</h3><span class="sub">${M.hs300HistSrc === '联接基金净值' ? '按联接基金净值' : '指数'}，红涨绿跌</span></div>${yearBars(M.hs300Hist)}</section>
+    <section class="card"><div class="card-h"><h3>红利低波 逐年涨跌</h3><span class="sub">${M.divLowVolHistSrc === '联接基金净值' ? '按联接基金净值' : '指数'}，红涨绿跌</span></div>${yearBars(M.divLowVolHist)}</section></div>` : ''}
   <section class="card" id="sec-compare">
     <div class="card-h"><h3>同类对比：哪只更好</h3><span class="sub">评分不看近1年涨幅</span></div>
     <div class="seg" role="group" aria-label="选择类别">${C.cats.filter(c => c.k !== 'cash').map(c => `<button class="segbtn" type="button" data-cmp="${c.k}" aria-pressed="${cmpCat === c.k}">${c.n}</button>`).join('')}</div>

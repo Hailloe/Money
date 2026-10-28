@@ -6,7 +6,7 @@
 数据来源（都是公开网页接口，不需要账号）：
   - 天天基金 pingzhongdata：基金净值历史、规模、基金经理  → 算出近1年/近3年/今年以来收益、近3年最大回撤、逐年收益
   - 蛋卷基金 指数估值：沪深300、中证A500、红利低波、标普500、纳指100 的市盈率、估值百分位、股息率
-  - 东方财富 数据中心：中国、美国 10 年期国债收益率
+  - 东方财富 数据中心：中国 10 年期国债收益率；FRED：美国 10 年期国债收益率
   - 东方财富 行情：指数月线 → 逐年涨跌
 
 任何一个来源失败，都保留 data.json 里上一次的数字，不会把好数据覆盖成空。
@@ -173,23 +173,36 @@ def fetch_valuations():
         date = it.get('date') or NOW.date().isoformat()
         if isinstance(date, (int, float)):
             date = ms_to_date(date).isoformat()
+        elif re.fullmatch(r'\d{2}-\d{2}', str(date)):  # 蛋卷只给“月-日”，补上年份（跨年时用去年）
+            mo = int(str(date)[:2])
+            date = f'{NOW.year - (1 if mo > NOW.month else 0)}-{date}'
+        if key in out:
+            continue
         out[key] = {
             'pe': round(float(it['pe']), 2) if it.get('pe') is not None else None,
             'pePct10y': round(float(it['pe_percentile']) * 100, 1) if it.get('pe_percentile') is not None else None,
             'dy': round(float(it['yeild']) * 100, 2) if it.get('yeild') is not None else None,
             'date': date, 'src': 'https://danjuanfunds.com/djmodule/value-center'
         }
+    status['valuationCodes'] = ','.join(sorted(str(it.get('index_code')) for it in items))[:2000]
     return out
+
+
+def fetch_ust10y():
+    """美国 10 年期国债收益率：美联储圣路易斯分行 FRED 的 DGS10 序列（CSV，免账号）。"""
+    rows = [l.split(',') for l in get('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10', referer='https://fred.stlouisfed.org/').strip().splitlines()[1:]]
+    rows = [r for r in rows if len(r) == 2 and r[1] not in ('.', '')]
+    d, v = rows[-1]
+    return {'yield': round(float(v), 2), 'date': d, 'src': 'https://fred.stlouisfed.org/series/DGS10'}
 
 
 def fetch_cgb10y():
     url = ('https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD'
-           '&columns=SOLAR_DATE,EMM00166466,EMG00001310&sortColumns=SOLAR_DATE&sortTypes=-1&pageSize=1&pageNumber=1')
+           '&columns=SOLAR_DATE,EMM00166466&sortColumns=SOLAR_DATE&sortTypes=-1&pageSize=1&pageNumber=1')
     row = json.loads(get(url, referer='https://data.eastmoney.com/cjsj/zmgzsyl.html'))['result']['data'][0]
     src = 'https://data.eastmoney.com/cjsj/zmgzsyl.html'
     cn = {'yield': round(float(row['EMM00166466']), 3), 'date': row['SOLAR_DATE'][:10], 'src': src}
-    us = {'yield': round(float(row['EMG00001310']), 3), 'date': row['SOLAR_DATE'][:10], 'src': src} if row.get('EMG00001310') is not None else None
-    return cn, us
+    return cn
 
 
 def fetch_index_years(secid):
@@ -250,21 +263,29 @@ def main():
     except Exception as e:  # noqa: BLE001
         status['valuation'] = f'failed: {e}'
     try:
-        cn, us = fetch_cgb10y()
-        market['cgb10y'] = merge(market.get('cgb10y'), cn)
-        if us:
-            market['ust10y'] = merge(market.get('ust10y'), us)
+        market['cgb10y'] = merge(market.get('cgb10y'), fetch_cgb10y())
         status['cgb10y'] = 'ok'
     except Exception as e:  # noqa: BLE001
         status['cgb10y'] = f'failed: {e}'
-    for key, secid in (('hs300Hist', '1.000300'), ('divLowVolHist', '2.H30269')):
+    try:
+        market['ust10y'] = merge(market.get('ust10y'), fetch_ust10y())
+        status['ust10y'] = 'ok'
+    except Exception as e:  # noqa: BLE001
+        status['ust10y'] = f'failed: {e}'
+    by_code = {f['code']: f for f in funds}
+    for key, secid, proxy in (('hs300Hist', '1.000300', '006131'), ('divLowVolHist', '2.H30269', '007466')):
         try:
             hist = fetch_index_years(secid)
             if hist:
                 market[key] = hist
+                market[key + 'Src'] = '指数'
             status[key] = 'ok'
         except Exception as e:  # noqa: BLE001
-            status[key] = f'failed: {e}'
+            # 行情接口不通时，用对应联接基金的净值涨跌代替（含费用，略低于指数）
+            if by_code.get(proxy, {}).get('yearRets'):
+                market[key] = by_code[proxy]['yearRets']
+                market[key + 'Src'] = '联接基金净值'
+            status[key] = f'failed (用联接基金代替): {e}'
 
     out = {
         'updated': NOW.strftime('%Y-%m-%d %H:%M'),
@@ -275,7 +296,7 @@ def main():
     os.makedirs(os.path.dirname(DATA), exist_ok=True)
     with open(DATA, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=1)
-    ok = sum(1 for v in status.values() if v == 'ok')
+    ok = sum(1 for k, v in status.items() if v == 'ok')
     print(f'updated {DATA}: {ok}/{len(status)} sources ok')
     for k, v in status.items():
         if v != 'ok':
