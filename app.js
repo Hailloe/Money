@@ -52,7 +52,7 @@ function cleanProfile(p, fallbackName) {
   out.journal = (Array.isArray(p.journal) ? p.journal : []).filter(j => j && typeof j.m === 'string' && /^\d{4}-\d{2}$/.test(j.m) && CHOICES[j.choice]).map(j => ({ m: j.m, choice: j.choice, at: typeof j.at === 'string' ? j.at : '' }));
   const pr = p.prefs && typeof p.prefs === 'object' ? p.prefs : {};
   out.prefs = { day: Math.min(28, Math.max(1, Math.round(num(pr.day) || 10))), noActive: pr.noActive === true,
-    avoid: Array.isArray(pr.avoid) ? pr.avoid.filter(a => typeof a === 'string').slice(0, 20) : [], overseasPct: [20, 25].includes(pr.overseasPct) ? pr.overseasPct : 0 };
+    avoid: Array.isArray(pr.avoid) ? pr.avoid.filter(a => typeof a === 'string').slice(0, 20) : [], overseasPct: [20, 25].includes(pr.overseasPct) ? pr.overseasPct : 0, calDay: Number.isInteger(pr.calDay) && pr.calDay >= 1 && pr.calDay <= 28 ? pr.calDay : 0 };
   const r = p.risk;
   out.risk = r && typeof r === 'object' && Array.isArray(r.ans) && r.ans.length === C.quiz.length && r.ans.every(a => Number.isInteger(a) && a >= 0 && a <= 3)
     ? (q => q && { ans: r.ans, score: q.score, k: q.k, at: typeof r.at === 'string' ? r.at : '' })(quizLevel(r.ans)) : null;
@@ -559,7 +559,7 @@ function viewHome(A) {
       <div class="card-h"><h3>本月要做的事</h3><a class="more" href="#analysis">全部 ›</a></div>
       <div class="chiprow">${cnt('sell') ? `<span class="act sell">卖出 ${cnt('sell')}</span>` : ''}${cnt('swap') ? `<span class="act swap">换基 ${cnt('swap')}</span>` : ''}${cnt('move') ? `<span class="act move">转出 ${cnt('move')}</span>` : ''}${cnt('buy') ? `<span class="act buy">买入 ${cnt('buy')}</span>` : ''}${cnt('stop') ? `<span class="act stop">暂停 ${cnt('stop')}</span>` : ''}${cnt('hold') ? `<span class="act hold">持有 ${cnt('hold')}</span>` : ''}</div>
       <div class="rows">${todo.slice(0, 5).map(x => `<a class="row" href="${x.fund ? '#fund-' + x.fund.code : '#analysis'}"><div class="t">${dot(x.cat)}<span class="ell">${esc(x.fund && x.fund.short || x.name)}</span></div><div class="r">${actChip(x.adv)}</div>${x.adv.amt ? `<div class="s">${amtLine(x.adv)}</div>` : ''}</a>`).join('') || '<p class="muted">这个月不用操作。</p>'}</div>
-      <p class="note">下次定投日：每月 ${di.day} 号，${di.n === 0 ? '就是今天' : `还有 ${di.n} 天`}。</p>
+      <p class="note">下次定投日：每月 ${di.day} 号，${di.n === 0 ? '就是今天' : `还有 ${di.n} 天`}。${P.prefs.calDay === di.day ? '' : ` <a class="more" href="#me-cal">${P.prefs.calDay ? '定投日改了，重新加日历提醒 ›' : '加到手机日历，到日子提醒我 ›'}</a>`}</p>
     </section>
   </div>
 
@@ -592,7 +592,7 @@ function viewHome(A) {
     </section>
     <section class="card" aria-label="本月打卡">
       <div class="card-h"><h3>本月打卡</h3><a class="more" href="#me">执行记录 ›</a></div>
-      ${checked ? `<p>这个月已打卡：<b>${esc(CHOICES[checked.choice].t)}</b>。</p><p class="note">系统会根据打卡记录学习你的习惯，调整股票比例和提醒。</p><button class="btn ghost sm" type="button" data-uncheck>改一下</button>`
+      ${checked ? `<p>这个月已打卡：<b>${esc(CHOICES[checked.choice].t)}</b>。</p>${P.prefs.calDay ? '' : '<p class="note">下个月想被提醒？<a class="more" href="#me-cal">加到手机日历 ›</a></p>'}<p class="note">系统会根据打卡记录学习你的习惯，调整股票比例和提醒。</p><button class="btn ghost sm" type="button" data-uncheck>改一下</button>`
         : `<p class="muted" style="font-size:13px">这个月你按建议操作了吗？如实选，系统靠它了解你的习惯。</p><div class="checkin">${Object.entries(CHOICES).map(([k, v]) => `<button class="btn ghost" type="button" data-checkin="${k}">${v.t}</button>`).join('')}</div>`}
     </section>
   </div>
@@ -900,7 +900,7 @@ function viewMe() {
       <label class="field">每月定投金额（元）<input type="number" inputmode="decimal" id="pref-monthly" value="${P.monthly || ''}"></label>
       <label class="field">每月几号定投<input type="number" inputmode="numeric" id="pref-day" min="1" max="28" value="${P.prefs.day || 10}"></label>
     </div>
-    <div class="calrow"><button class="btn ghost" type="button" data-cal>加到手机日历</button><span class="note">每月 ${P.prefs.day || 10} 号早上 9:30 提醒你定投，每年 1 月提醒一次年度体检。改了定投日要重新加一次（先在日历里删掉旧的）。</span></div>
+    <div class="calrow" id="me-cal"><button class="btn ghost" type="button" data-cal>加到手机日历</button><span class="note">每月 ${P.prefs.day || 10} 号 9:30 提醒你定投，每年 1 月 15 日提醒一次年度体检。点按钮后：iPhone 和 iPad 选“添加全部”；安卓手机打开下载好的文件，选“日历”。在微信里打不开的话，先用浏览器打开本页。${P.prefs.calDay ? `<br>上次加的是每月 ${P.prefs.calDay} 号${P.prefs.calDay !== (P.prefs.day || 10) ? '，和现在的定投日不一样：先在日历里删掉旧的“定投日”提醒，再点一次按钮。' : '。'}` : ''}</span></div>
     ${currentLevel().short ? '' : `<label class="field">海外比例（标普500 : 纳指100 = 7 : 3）<select id="pref-overseas">${[[0, `按风险档位（${currentLevel().level.target.overseas}%）`], [20, '20%'], [25, '25%（建议上限）']].map(([v, n]) => `<option value="${v}" ${(+P.prefs.overseasPct || 0) === v ? 'selected' : ''}>${n}</option>`).join('')}</select><span>海外最多占股票类的 40%，档位低时会自动按上限算，现在是 ${targets().overseas}%。</span></label>`}
     <label class="switch"><input type="checkbox" id="pref-noactive" ${P.prefs.noActive ? 'checked' : ''}><span>不买主动基金（全部用指数基金）</span></label>
     <div class="field"><span>不想碰的行业（名单外的基金名字里有这些字，会建议卖出）</span><div class="opts wrap">${C.avoidOptions.map(a => `<label class="opt"><input type="checkbox" data-avoid="${esc(a)}" ${avoid.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div></div>
@@ -951,9 +951,9 @@ function icsText(day) {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//money-dashboard//CN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:稳健基金',
     'BEGIN:VTIMEZONE', 'TZID:Asia/Shanghai', 'BEGIN:STANDARD', 'DTSTART:19700101T000000', 'TZOFFSETFROM:+0800', 'TZOFFSETTO:+0800', 'TZNAME:CST', 'END:STANDARD', 'END:VTIMEZONE',
     ...ev('monthly-invest', ymd(first), `FREQ=MONTHLY;BYMONTHDAY=${day}`, '定投日：打开稳健基金看板',
-      `今天是每月定投日。\n1. 打开看板，看“本月要做的事”和“本月定投计划”\n2. 在支付宝按计划买入\n3. 回到看板：按计划一键记账、更新持仓、本月打卡\n不看涨跌新闻，按计划执行就好。\n${url}#analysis`, url + '#analysis'),
+      `今天是每月定投日。\n1. 打开看板，看“本月要做的事”和“本月定投计划”\n2. 在支付宝按计划买入\n3. 回到看板：按计划一键记账、更新持仓、本月打卡\n涨了跌了都照计划买，不用看新闻。\n${url}#analysis`, url + '#analysis'),
     ...ev('yearly-checkup', ymd(nextJan), 'FREQ=YEARLY', '年度体检：稳健基金看板',
-      `一年一次的检查，大约 15 分钟：\n1. 重新做一次风险测评（收入、用钱计划有没有变）\n2. 看推荐基金的经理有没有换、规模有没有明显缩水\n3. 看看年化收益进度，和余额宝比一比\n4. 导出一份备份\n${url}#me`, url + '#me'),
+      `一年一次的检查，大约 15 分钟：\n1. 重新做一次风险测评（收入、用钱计划有没有变）\n2. 看“买卖分析”里有没有基金被标成“换成更好的”，拿不准就先不动\n3. 看看年化收益进度，和余额宝比一比\n4. 导出一份备份\n${url}#me`, url + '#me'),
     'END:VCALENDAR'];
   return lines.map(fold).join('\r\n') + '\r\n';
 }
@@ -962,7 +962,8 @@ function downloadCalendar() {
   const blob = new Blob([icsText(day)], { type: 'text/calendar;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `money-invest-day${day}.ics`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  toast('已生成日历文件。iPhone 上点“添加全部”；其他手机用日历 App 打开它');
+  P.prefs.calDay = day; save(); render(true);
+  toast('已生成日历文件，按页面上的步骤添加');
 }
 
 /* ================= 年化收益进度 =================
@@ -1275,7 +1276,7 @@ function renderInner(force) {
   $('#who').textContent = P.name; $('#who-i').textContent = (P.name || '我').slice(0, 1);
   if (same) window.scrollTo(0, y);
   else {
-    const anchor = { 'analysis-plan': 'sec-plan', 'analysis-market': 'sec-market', 'analysis-ai': 'sec-ai', 'me-quiz': 'me-quiz', 'me-ai': 'me-ai', 'holdings-ledger': 'sec-ledger' }[h];
+    const anchor = { 'me-cal': 'me-cal', 'analysis-plan': 'sec-plan', 'analysis-market': 'sec-market', 'analysis-ai': 'sec-ai', 'me-quiz': 'me-quiz', 'me-ai': 'me-ai', 'holdings-ledger': 'sec-ledger' }[h];
     if (anchor) document.getElementById(anchor)?.scrollIntoView(); else window.scrollTo(0, 0);
   }
   if (h.startsWith('fund-')) loadLive(h.slice(5));
@@ -1357,7 +1358,7 @@ function bindMe() {
   $('#ai-key').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aiAction('savekey'); } });
   $('#pname').addEventListener('change', e => { P.name = e.target.value.trim().slice(0, 12) || '我'; save(); render(true); });
   $('#pref-monthly').addEventListener('change', e => { const v = Math.max(0, Number(e.target.value) || 0); P.monthly = v; save(); toast('已保存'); });
-  $('#pref-day').addEventListener('change', e => { const v = Math.min(28, Math.max(1, Math.round(Number(e.target.value) || 10))); const old = P.prefs.day; P.prefs.day = v; e.target.value = v; save(); render(true); toast(old !== v ? '已保存。如果之前加过日历提醒，记得重新加一次' : '已保存'); });
+  $('#pref-day').addEventListener('change', e => { const v = Math.min(28, Math.max(1, Math.round(Number(e.target.value) || 10))); const old = P.prefs.day; P.prefs.day = v; e.target.value = v; save(); render(true); toast(old !== v && P.prefs.calDay ? '已保存。之前加过日历提醒：先在日历里删掉旧的“定投日”，再点一次“加到手机日历”' : '已保存'); });
   $('#pref-overseas') && $('#pref-overseas').addEventListener('change', e => { P.prefs.overseasPct = +e.target.value || 0; save(); render(true); toast('已调整海外比例'); });
   $('#pref-noactive').addEventListener('change', e => { P.prefs.noActive = e.target.checked; save(); render(true); });
   document.querySelectorAll('[data-avoid]').forEach(cb => cb.addEventListener('change', () => { P.prefs.avoid = [...document.querySelectorAll('[data-avoid]:checked')].map(x => x.dataset.avoid); save(); }));
