@@ -1,10 +1,13 @@
-# 每个交易日北京时间 16:40、21:40 自动更新基金数据（净值一般在 19:00–22:00 公布），也可以在 Actions 页面手动点 "Run workflow"。
+# 自动更新基金数据。基金净值一般在晚上 19:00–22:00 公布，所以：
+#   - 交易日北京时间 22:30 跑一次（拿当天净值）
+#   - 第二天早上 08:00 再跑一次（补漏；GitHub 定时任务有时会延迟几个小时）
+# 也可以在 GitHub 仓库的 Actions 页面手动点 “Run workflow”。
 name: 更新基金数据
 
 on:
   schedule:
-    - cron: '40 8 * * 1-5'
-    - cron: '40 13 * * 1-5'
+    - cron: '30 14 * * 1-5'   # UTC 14:30 = 北京时间 22:30（周一到周五）
+    - cron: '0 0 * * 2-6'     # UTC 00:00 = 北京时间 08:00（周二到周六）
   workflow_dispatch:
 
 permissions:
@@ -24,7 +27,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: 抓取数据
-        run: python3 scripts/update_data.py
+        id: fetch
+        # 部分数据源失败时脚本返回失败，但已经抓到的数据照样提交，最后再让任务标红提醒
+        run: python3 scripts/update_data.py || echo "failed=1" >> "$GITHUB_OUTPUT"
       - name: 提交更新
         run: |
           git config user.name "money-bot"
@@ -34,5 +39,12 @@ jobs:
             echo "数据没有变化"
           else
             git commit -m "数据更新 $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')"
+            # 运行期间如果有人提交了代码，先合并再推送
+            git pull --rebase origin "${GITHUB_REF_NAME}"
             git push
           fi
+      - name: 检查抓取结果
+        if: steps.fetch.outputs.failed == '1'
+        run: |
+          echo "::error::有关键数据源抓取失败（基金净值全部失败，或指数估值失败）。看上面“抓取数据”步骤的日志。"
+          exit 1

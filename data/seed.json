@@ -31,7 +31,9 @@
    "code": "022459",
    "name": "易方达中证A500ETF联接A",
    "cat": "index",
-   "index": "中证A500"
+   "index": "中证A500",
+   "mgmtFee": 0.15,
+   "custFee": 0.05
   },
   {
    "code": "007466",
@@ -53,6 +55,30 @@
    "name": "富国天惠成长混合A",
    "cat": "active",
    "managerSince": "2005-11"
+  },
+  {
+   "code": "050025",
+   "name": "博时标普500ETF联接A",
+   "cat": "overseas",
+   "index": "标普500"
+  },
+  {
+   "code": "161125",
+   "name": "易方达标普500指数(QDII-LOF)A",
+   "cat": "overseas",
+   "index": "标普500"
+  },
+  {
+   "code": "270042",
+   "name": "广发纳斯达克100ETF联接(QDII)A",
+   "cat": "overseas",
+   "index": "纳斯达克100"
+  },
+  {
+   "code": "161130",
+   "name": "易方达纳斯达克100(QDII-LOF)A",
+   "cat": "overseas",
+   "index": "纳斯达克100"
   }
  ]
 }

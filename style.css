@@ -256,3 +256,17 @@ a.plain:hover{text-decoration:underline}
 .who i{width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font-style:normal;display:grid;place-items:center;font-size:11px;font-weight:600}
 @media (max-width:899px){.top .in{position:relative}.who{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:12px}.who span{display:none}.who i{width:30px;height:30px;font-size:13px}.datestamp{padding-right:40px}}
 .us{display:grid;gap:10px;border-top:.5px solid var(--line);padding-top:10px}
+
+/* ---- 审查修正：手机点按区域 ≥ 44px，iPad 竖屏两列，对比表首列不挤 ---- */
+#cmp td:first-child,#cmp th:first-child{min-width:120px}
+@media (max-width:899px){
+  .segbtn,.btn,.btn.sm,.icon-btn,.opt,.checkin .btn{min-height:44px}
+  .icon-btn{width:44px}
+  .more,.back{min-height:44px;display:inline-flex;align-items:center}
+  .row .t a.plain{display:inline-flex;align-items:center;min-height:32px}
+  .field input,.field select{min-height:44px}
+}
+@media (min-width:700px) and (max-width:899px){
+  .grid2,.grid3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .grid3 .span2,.grid3>.hero{grid-column:1/-1}
+}

@@ -198,9 +198,20 @@ def fetch_ust10y():
             lines = get(url, referer='https://home.treasury.gov/', timeout=45).strip().splitlines()
             head = [h.strip().strip('"') for h in lines[0].split(',')]
             i = head.index('10 Yr')
-            row = [c.strip().strip('"') for c in lines[1].split(',')]  # 最新一天在第一行
-            m, d, y = row[0].split('/')
-            return {'yield': round(float(row[i]), 2), 'date': f'{y}-{m}-{d}',
+            best = None
+            for line in lines[1:]:  # 不假设排序，取日期最新的一行
+                row = [c.strip().strip('"') for c in line.split(',')]
+                try:
+                    m, d, y = row[0].split('/')
+                    key = f'{y}-{int(m):02d}-{int(d):02d}'
+                    val = float(row[i])
+                except (ValueError, IndexError):
+                    continue
+                if best is None or key > best[0]:
+                    best = (key, val)
+            if not best:
+                raise ValueError('no rows')
+            return {'yield': round(best[1], 2), 'date': best[0],
                     'src': 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates'}
         except Exception as e:  # noqa: BLE001
             errors.append(f'treasury {year}: {e}')
@@ -240,11 +251,12 @@ def fetch_index_years(secid):
 
 
 def merge(old, new):
-    """新数据覆盖旧数据，但 None 不覆盖。"""
+    """新数据覆盖旧数据，但 None 和空列表不覆盖（防止一次抓取失败把好数据清空）。"""
     res = dict(old or {})
     for k, v in (new or {}).items():
-        if v is not None:
-            res[k] = v
+        if v is None or (isinstance(v, list) and not v):
+            continue
+        res[k] = v
     return res
 
 
@@ -315,12 +327,13 @@ def main():
     with open(DATA, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=1)
     ok = sum(1 for k, v in status.items() if v == 'ok')
-    print(f'updated {DATA}: {ok}/{len(status)} sources ok')
+    fund_ok = sum(1 for k, v in status.items() if k.startswith('fund:') and v == 'ok')
+    print(f'updated {DATA}: {ok}/{len(status)} sources ok, funds {fund_ok}/{len(funds)}')
     for k, v in status.items():
-        if v != 'ok':
+        if v != 'ok' and k != 'valuationCodes':
             print(' ', k, v)
-    # 全部失败才算任务失败，提醒有人看一下
-    sys.exit(0 if ok else 1)
+    # 一只基金都没抓到，或者估值没抓到，都算失败：GitHub 会发邮件提醒仓库主人
+    sys.exit(0 if fund_ok and status.get('valuation') == 'ok' else 1)
 
 
 if __name__ == '__main__':
