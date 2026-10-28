@@ -267,6 +267,13 @@ a.plain:hover{text-decoration:underline}
   .field input,.field select{min-height:44px}
 }
 @media (min-width:700px) and (max-width:899px){
-  .grid2,.grid3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-  .grid3 .span2,.grid3>.hero,.grid3>.hero+.card{grid-column:1/-1}
+  .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 }
+@media (max-width:899px){
+  .who{min-width:44px;min-height:44px;justify-content:center;top:6px}
+  .row .t a.plain{min-height:44px}
+  .switch{min-height:44px}
+  .back{min-width:44px}
+}
+.hero-row .v,.temp .v{white-space:nowrap}
+.temp .v{font-size:clamp(19px,5.5vw,24px)}

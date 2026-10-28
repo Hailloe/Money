@@ -25,7 +25,8 @@
    "cat": "index",
    "index": "沪深300",
    "mgmtFee": 0.15,
-   "custFee": 0.05
+   "custFee": 0.05,
+   "share": "C"
   },
   {
    "code": "022459",
@@ -79,6 +80,15 @@
    "name": "易方达纳斯达克100(QDII-LOF)A",
    "cat": "overseas",
    "index": "纳斯达克100"
+  },
+  {
+   "code": "460300",
+   "name": "华泰柏瑞沪深300ETF联接A",
+   "cat": "index",
+   "index": "沪深300",
+   "mgmtFee": 0.15,
+   "custFee": 0.05,
+   "share": "A"
   }
  ]
 }

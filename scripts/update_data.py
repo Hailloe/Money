@@ -289,7 +289,8 @@ def main():
         val = fetch_valuations()
         for k, v in val.items():
             market[k] = merge(market.get(k), v)
-        status['valuation'] = 'ok' if val else 'failed: empty'
+        need = [k for k in ('hs300', 'divLowVol', 'sp500', 'ndx') if k not in val]
+        status['valuation'] = 'ok' if not need else ('failed: empty' if not val else 'partial: 缺 ' + ','.join(need))
     except Exception as e:  # noqa: BLE001
         status['valuation'] = f'failed: {e}'
     try:
@@ -332,8 +333,10 @@ def main():
     for k, v in status.items():
         if v != 'ok' and k != 'valuationCodes':
             print(' ', k, v)
-    # 一只基金都没抓到，或者估值没抓到，都算失败：GitHub 会发邮件提醒仓库主人
-    sys.exit(0 if fund_ok and status.get('valuation') == 'ok' else 1)
+    # 一只基金都没抓到，或者沪深300 估值没抓到，都算失败：GitHub 会发邮件提醒仓库主人
+    v = status.get('valuation', '')
+    val_ok = v == 'ok' or (v.startswith('partial') and 'hs300' not in v)   # 沪深300 估值决定大部分买入倍数，必须有
+    sys.exit(0 if fund_ok and val_ok else 1)
 
 
 if __name__ == '__main__':
