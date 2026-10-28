@@ -328,14 +328,17 @@ td .cellname .tag{flex:none}
 .fold{border:.5px solid var(--line);border-radius:10px;padding:0 12px}
 .fold>summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:44px;font-size:14px;font-weight:500}
 .fold>summary::-webkit-details-marker{display:none}
-.fold>summary>span:first-child::before{content:"›";display:inline-block;width:1em;color:var(--brand);transition:transform .15s}
+.fold>summary>span:first-child{display:inline-flex;align-items:center}
+.fold>summary>span:first-child::before{content:"›";display:inline-flex;justify-content:center;align-items:center;width:1em;height:1em;line-height:1;font-size:18px;color:var(--brand);transition:transform .15s;transform-origin:50% 50%;margin-right:4px}
 .fold[open]>summary>span:first-child::before{transform:rotate(90deg)}
 .fold[open]>summary{border-bottom:.5px solid var(--line)}
 .hold-item.ro{grid-template-columns:minmax(0,1fr) auto auto;align-items:center}
 .hold-item.editing{background:var(--fill);border-radius:10px;padding:12px;margin:8px 0}
 .hold-item .btnrow{flex-wrap:nowrap}
+.hold-item.ro .btnrow{min-width:150px;justify-content:flex-end}
+.tag.warn{background:var(--warn-soft);color:var(--warn);font-weight:600}
 .hv{display:grid;justify-items:end;font-size:15px;font-weight:500}.hv .sub{font-weight:400}
-@media (max-width:560px){.hold-item.ro{grid-template-columns:minmax(0,1fr) auto}.hold-item.ro .nm{grid-column:auto}.hold-item.ro .btnrow{grid-column:1/-1;justify-content:flex-end}.hold-item.editing .btnrow{grid-column:1/-1}}
+@media (max-width:560px){.hold-item.ro{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"nm bt" "hv hv";row-gap:4px}.hold-item.ro .nm{grid-column:auto;grid-area:nm}.hold-item.ro .btnrow{grid-area:bt;min-width:0}.hold-item.ro .hv{grid-area:hv;justify-items:start;display:flex;gap:10px;align-items:baseline}.hold-item.editing .btnrow{grid-column:1/-1}}
 .inline{display:flex;gap:8px;align-items:center}.inline input{flex:1;min-width:0}
 .kvrow{display:flex;gap:10px;align-items:center;font-size:15px;color:var(--fg)}
 .kvlist{margin:0;padding:6px 0 10px;display:grid}
