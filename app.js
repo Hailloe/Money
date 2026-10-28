@@ -1028,7 +1028,7 @@ function calmCard(A, compact) {
     return `<section class="card calm-card span2" aria-label="下跌时的冷静助手">
       <div class="card-h"><h3>正在下跌，先别慌</h3><a class="more" href="#analysis-calm">看详情 ›</a></div>
       <p><b>${esc(x.f.short || x.f.name)}</b> 从近一年高点跌了 <b class="n">${Math.abs(x.cur.dd).toFixed(1)}%</b>${heldAl.length > 1 ? `，你持有的另外 ${heldAl.length - 1} 只也跌过了提醒线` : ''}。</p>
-      <p class="note">${cf.todo[0]}</p></section>`;
+      <p class="note">${cf.todo[0]}${x.f.cat === 'bond' && cf.ruleSells ? ' 另外，债券基金很少跌这么多，可能有信用风险，看详情。' : ''}</p></section>`;
   }
   if (!al.length) return '';
   const firstHeld = heldAl[0];
@@ -1047,7 +1047,7 @@ function calmChecklist(A, code) {
   const name = esc(it.fund ? it.fund.short || it.fund.name : it.name), loss = Math.min(0, it.profit);
   const adv = (A.advice.find(x => x.code === code) || {}).adv;
   const ruleSell = adv && (adv.k === 'sell' || adv.k === 'swap') && adv.amt ? `<p class="calm-rule">规则这个月本来就让你${esc(adv.t)} ${fmt(adv.amt)}，照做没问题；下面的问题是给“想全部卖掉”的时候用的。</p>` : '';
-  const q1 = it.cat === 'bond' ? '这笔钱 3 年内要用吗？债券基金本来就是放稳钱的地方，短期波动一般不大；要用的话，到“我的 → 风险测评”重做，系统会调整配置，按需分批取，不用一次全卖。'
+  const q1 = it.cat === 'bond' ? '这笔钱 3 年内要用吗？债券基金平时波动不大，这次跌得多，先看公告；要用的话，到“我的 → 风险测评”重做，系统会调整配置，按需分批取，不用一次全卖。'
     : `这笔钱 3 年内要用吗？不用的话，现在的下跌和你没有关系；要用的话，这笔钱本就不该放在股票基金里：到“我的 → 风险测评”重做，系统会分 ${C.rules.sellMonths} 个月转到债券和余额宝。`;
   return `<div class="checklist">
     ${ruleSell}<p><b>卖掉${name}之前，先回答 3 个问题：</b></p>
