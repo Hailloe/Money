@@ -900,7 +900,7 @@ function viewMe() {
       <label class="field">每月定投金额（元）<input type="number" inputmode="decimal" id="pref-monthly" value="${P.monthly || ''}"></label>
       <label class="field">每月几号定投<input type="number" inputmode="numeric" id="pref-day" min="1" max="28" value="${P.prefs.day || 10}"></label>
     </div>
-    <div class="calrow" id="me-cal"><button class="btn ghost" type="button" data-cal>加到手机日历</button><span class="note">每月 ${P.prefs.day || 10} 号 9:30 提醒你定投，每年 1 月 15 日提醒一次年度体检。点按钮后：iPhone 和 iPad 选“添加全部”；安卓手机打开下载好的文件，选“日历”。在微信里打不开的话，先用浏览器打开本页。${P.prefs.calDay ? `<br>上次加的是每月 ${P.prefs.calDay} 号${P.prefs.calDay !== (P.prefs.day || 10) ? '，和现在的定投日不一样：先在日历里删掉旧的“定投日”提醒，再点一次按钮。' : '。'}` : ''}</span></div>
+    <div class="calrow" id="me-cal"><button class="btn ghost" type="button" data-cal>加到手机日历</button><span class="note">每月 ${P.prefs.day || 10} 号 9:30 提醒你定投，每年 1 月 15 日提醒一次年度体检。点按钮后：iPhone 和 iPad 选“添加全部”（如果文件先存进了“文件”App，就点开它再添加）；安卓手机打开下载好的文件，选“日历”。在微信里打不开的话，先用浏览器打开本页。${P.prefs.calDay ? `<br>上次加的是每月 ${P.prefs.calDay} 号${P.prefs.calDay !== (P.prefs.day || 10) ? '，和现在的定投日不一样：先在日历里删掉旧的“定投日”提醒，再点一次按钮。' : '。'}` : ''}</span></div>
     ${currentLevel().short ? '' : `<label class="field">海外比例（标普500 : 纳指100 = 7 : 3）<select id="pref-overseas">${[[0, `按风险档位（${currentLevel().level.target.overseas}%）`], [20, '20%'], [25, '25%（建议上限）']].map(([v, n]) => `<option value="${v}" ${(+P.prefs.overseasPct || 0) === v ? 'selected' : ''}>${n}</option>`).join('')}</select><span>海外最多占股票类的 40%，档位低时会自动按上限算，现在是 ${targets().overseas}%。</span></label>`}
     <label class="switch"><input type="checkbox" id="pref-noactive" ${P.prefs.noActive ? 'checked' : ''}><span>不买主动基金（全部用指数基金）</span></label>
     <div class="field"><span>不想碰的行业（名单外的基金名字里有这些字，会建议卖出）</span><div class="opts wrap">${C.avoidOptions.map(a => `<label class="opt"><input type="checkbox" data-avoid="${esc(a)}" ${avoid.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div></div>
@@ -946,13 +946,13 @@ function icsText(day) {
   const url = location.href.split('#')[0];
   const fold = line => { const out = []; let cur = ''; for (const ch of line) { if (new TextEncoder().encode(cur + ch).length > 73) { out.push(cur); cur = ' ' + ch; } else cur += ch; } out.push(cur); return out.join('\r\n'); };
   const ev = (uid, start, rule, title, desc, link) => ['BEGIN:VEVENT', `UID:${uid}@money-dashboard`, `DTSTAMP:${stamp}`, `DTSTART;TZID=Asia/Shanghai:${start}T093000`, `DTEND;TZID=Asia/Shanghai:${start}T094500`, `RRULE:${rule}`,
-    `SUMMARY:${title}`, `DESCRIPTION:${desc.replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n')}`, `URL:${link}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'];
+    `SUMMARY:${title}`, `DESCRIPTION:${desc.replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n')}`, `URL:${link}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:-PT0M', 'END:VALARM', 'END:VEVENT'];
   const nextJan = new Date(now.getFullYear() + (now.getMonth() === 0 && now.getDate() <= 15 ? 0 : 1), 0, 15);
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//money-dashboard//CN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:稳健基金',
     'BEGIN:VTIMEZONE', 'TZID:Asia/Shanghai', 'BEGIN:STANDARD', 'DTSTART:19700101T000000', 'TZOFFSETFROM:+0800', 'TZOFFSETTO:+0800', 'TZNAME:CST', 'END:STANDARD', 'END:VTIMEZONE',
-    ...ev('monthly-invest', ymd(first), `FREQ=MONTHLY;BYMONTHDAY=${day}`, '定投日：打开稳健基金看板',
+    ...ev('monthly-invest-' + STORE.current, ymd(first), `FREQ=MONTHLY;BYMONTHDAY=${day}`, '定投日：打开稳健基金看板',
       `今天是每月定投日。\n1. 打开看板，看“本月要做的事”和“本月定投计划”\n2. 在支付宝按计划买入\n3. 回到看板：按计划一键记账、更新持仓、本月打卡\n涨了跌了都照计划买，不用看新闻。\n${url}#analysis`, url + '#analysis'),
-    ...ev('yearly-checkup', ymd(nextJan), 'FREQ=YEARLY', '年度体检：稳健基金看板',
+    ...ev('yearly-checkup-' + STORE.current, ymd(nextJan), 'FREQ=YEARLY', '年度体检：稳健基金看板',
       `一年一次的检查，大约 15 分钟：\n1. 重新做一次风险测评（收入、用钱计划有没有变）\n2. 看“买卖分析”里有没有基金被标成“换成更好的”，拿不准就先不动\n3. 看看年化收益进度，和余额宝比一比\n4. 导出一份备份\n${url}#me`, url + '#me'),
     'END:VCALENDAR'];
   return lines.map(fold).join('\r\n') + '\r\n';
