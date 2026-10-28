@@ -290,3 +290,11 @@ td .cellname .tag{flex:none}
 .pickfrom[open] summary{margin-bottom:10px}
 .pickfrom>div+div{margin-top:10px}
 #code-input{font-family:var(--num);letter-spacing:.08em}
+.ai-text{font-size:14px;line-height:1.7;display:grid;gap:6px}
+.ai-text p{margin:0}.ai-text ul{margin:0;padding-left:1.2em;display:grid;gap:4px}
+.ai-text[hidden]{display:none}
+#sec-ai .ai-text,#ai-fund{background:var(--fill);border-radius:10px;padding:12px 14px}
+.ai-h{font-size:13px;color:var(--muted);font-weight:600;margin-top:4px}
+.note.err{color:var(--stop)}
+.alert{display:grid;gap:4px;border-left:3px solid var(--warn);padding:2px 0 2px 10px;margin-top:8px}
+.calm{font-size:14px;color:var(--fg);background:var(--fill);border-radius:10px;padding:10px 12px}

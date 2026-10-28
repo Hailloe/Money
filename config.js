@@ -118,5 +118,16 @@ window.CONFIG = {
     { q: '你的收入情况？', a: ['不稳定', '一般，存款不多', '稳定', '很稳定，有半年以上存款'] }
   ],
 
+  /* AI 助手（DeepSeek）。key 由用户在“我的”页面填写，只存在自己设备的浏览器里，绝不写进这个文件 */
+  ai: {
+    baseUrl: 'https://api.deepseek.com',
+    models: [
+      { id: 'deepseek-chat', n: '快速（deepseek-chat）' },
+      { id: 'deepseek-reasoner', n: '深度思考（deepseek-reasoner，更慢）' }
+    ],
+    defaultModel: 'deepseek-chat',
+    maxTokens: 1500
+  },
+
   avoidOptions: ['白酒', '医药', '科技', '新能源', '军工', '房地产', '银行', '半导体']
 };

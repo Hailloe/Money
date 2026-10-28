@@ -56,6 +56,7 @@ function cleanProfile(p, fallbackName) {
   const r = p.risk;
   out.risk = r && typeof r === 'object' && Array.isArray(r.ans) && r.ans.length === C.quiz.length && r.ans.every(a => Number.isInteger(a) && a >= 0 && a <= 3)
     ? (q => q && { ans: r.ans, score: q.score, k: q.k, at: typeof r.at === 'string' ? r.at : '' })(quizLevel(r.ans)) : null;
+  out.aiReport = p.aiReport && typeof p.aiReport.text === 'string' && typeof p.aiReport.at === 'string' ? { text: p.aiReport.text.slice(0, 8000), at: p.aiReport.at, model: String(p.aiReport.model || ''), example: !!p.aiReport.example, fp: typeof p.aiReport.fp === 'string' ? p.aiReport.fp : '' } : null;
   out.sellPlans = {};
   if (p.sellPlans && typeof p.sellPlans === 'object') Object.entries(p.sellPlans).forEach(([k, v]) => { if (v && /^\d{4}-\d{2}$/.test(v.start)) out.sellPlans[k] = { start: v.start }; });
   return out;
@@ -587,12 +588,23 @@ function viewHome(A) {
         : `<p class="muted" style="font-size:13px">这个月你按建议操作了吗？如实选，系统靠它了解你的习惯。</p><div class="checkin">${Object.entries(CHOICES).map(([k, v]) => `<button class="btn ghost" type="button" data-checkin="${k}">${v.t}</button>`).join('')}</div>`}
     </section>
   </div>
+  <div class="grid3">${aiCardHome()}</div>
   </div>`;
 }
 
 function viewAnalysis(A) {
   return `<div class="view">
   ${dataAge()}${exampleBanner()}${shortBanner()}
+  <section class="card" id="sec-ai">
+    <div class="card-h"><h3>AI 解读</h3><span class="sub">DeepSeek · 只解释，不改规则</span></div>
+    ${AIS.key ? `<div class="btnrow"><button class="btn" type="button" data-ai="review">${P.aiReport ? '重新解读本月建议' : '让 AI 解读本月建议'}</button><button class="btn ghost" type="button" data-ai="stop" id="ai-stop" hidden>停止</button></div>
+    <div id="ai-out" class="ai-text" ${P.aiReport ? '' : 'hidden'}>${P.aiReport ? aiReportHTML(P.aiReport) : ''}</div>
+    <div class="addrow"><label class="field">有问题直接问（比如：为什么让我卖富国天惠？）<input id="ai-q" type="text" class="txt" maxlength="200" placeholder="输入问题，按回车"></label><button class="btn ghost" type="button" data-ai="ask">提问</button></div>
+    <div id="ai-ans" class="ai-text" hidden></div>
+    <p class="note">提问时会把你的持仓金额和本页的建议发给 DeepSeek，不发名字。</p>`
+    : '<p class="muted" style="font-size:13px">填上 DeepSeek API key，就能让 AI 用大白话解读本月建议，也能直接提问。</p><a class="btn sm" href="#me-ai">去设置</a>'}
+    <details class="pickfrom"><summary>盯盘历史提醒（${marketAlerts(3650).length} 条）</summary>${marketAlerts(3650).slice(0, 20).map(alertHTML).join('') || '<p class="note">还没有提醒。只有估值档位变化、明显回撤或数据断更时才会提醒。</p>'}</details>
+  </section>
   <section class="card" id="sec-advice">
     <div class="card-h"><h3>每只基金的操作建议</h3><span class="sub">最需要处理的排在前面</span></div>
     <div class="rows">${A.advice.map(x => `
@@ -707,7 +719,9 @@ function viewFund(code, A) {
     <div class="btnrow">
       <a class="btn" href="https://fund.eastmoney.com/${f.code}.html" target="_blank" rel="noopener">在天天基金查看 ↗</a>
       <button class="btn ghost" type="button" data-copy="${f.code}">复制代码，去支付宝搜</button>
+      ${AIS.key ? `<button class="btn ghost" type="button" data-ai="fund" data-code="${f.code}">问 AI 这只基金</button>` : ''}
     </div>
+    <div id="ai-fund" class="ai-text" hidden></div>
     <p class="note">收益和回撤按累计净值计算，截至 ${esc(cnDate(f.retDate) || '—')}；规模截至 ${esc(f.scaleDate || '—')}。</p>
   </section>
   ${f.curve && f.curve.length > 2 ? `<section class="card"><div class="card-h"><h3>近3年累计净值</h3><span class="sub">按周</span></div>${lineChart('nav', f.curve, { label: '近3年累计净值走势', fmtX: s => s.slice(0, 7), fmtTip: p => `${cnDate(p[0])}：${p[1].toFixed(4)}`, color: `var(--s-${f.cat})` })}</section>` : ''}
@@ -887,6 +901,17 @@ function viewMe() {
   </section>
   </div>
 
+  <section class="card" id="me-ai">
+    <div class="card-h"><h3>AI 助手（DeepSeek）</h3>${AIS.key ? '<span class="tag pick">已设置</span>' : '<span class="tag">未设置</span>'}</div>
+    <p class="note">到 platform.deepseek.com 注册 → API keys → 创建，把 key 粘贴到下面。key 只保存在这台设备的浏览器里，不会进备份文件，也不会上传到 GitHub。建议在 DeepSeek 后台设置用量上限。<b>不要把 key 发给任何人。</b></p>
+    <div class="twocol">
+      <label class="field">API key<input id="ai-key" type="password" class="txt" autocomplete="off" placeholder="${AIS.key ? '已保存（' + esc(AIS.key.slice(0, 5)) + '…），重新粘贴可替换' : 'sk-…'}"></label>
+      <label class="field">模型<select id="ai-model">${C.ai.models.map(m => `<option value="${m.id}" ${AIS.model === m.id ? 'selected' : ''}>${esc(m.n)}</option>`).join('')}</select></label>
+    </div>
+    <label class="field">自动解读<select id="ai-auto">${[['change', '建议有变化或到定投日时（推荐）'], ['off', '关闭，只在我点按钮时解读']].map(([v, n]) => `<option value="${v}" ${AIS.auto === v ? 'selected' : ''}>${n}</option>`).join('')}</select><span>打开网站时检查：只有你的操作建议变了，或者到了每月定投日，才会让 AI 重新解读，不会天天发。</span></label>
+    <div class="btnrow"><button class="btn" type="button" data-ai="savekey">保存</button>${AIS.key ? '<button class="btn ghost" type="button" data-ai="testkey">测试连接</button><button class="btn ghost" type="button" data-ai="delkey">删除 key</button>' : ''}</div>
+    <div id="ai-test" class="note" hidden></div>
+  </section>
   <section class="card">
     <div class="card-h"><h3>备份与换设备</h3><span class="sub">数据只存在这台设备的浏览器里</span></div>
     <p class="note">换手机、换 iPad，或者清理浏览器之前，先导出一份。到新设备上导入，就能接着用。导出内容包括所有用户。</p>
@@ -896,6 +921,135 @@ function viewMe() {
   </div>`;
 }
 let delArm = false, resetArm = false;
+
+/* ================= AI 助手（DeepSeek） =================
+ * key 只存在这台设备的浏览器里（localStorage 的 money.ai），不进备份文件，不上传到 GitHub。
+ * AI 只负责解释规则引擎算出来的建议，不改规则、不编数据。
+ */
+const AI_LS = 'money.ai';
+let AIS = { key: '', model: C.ai.defaultModel, auto: 'change' };
+try { const a = JSON.parse(localStorage.getItem(AI_LS) || 'null'); if (a && typeof a === 'object') AIS = Object.assign(AIS, { key: typeof a.key === 'string' ? a.key : '', model: C.ai.models.some(m => m.id === a.model) ? a.model : C.ai.defaultModel, auto: a.auto === 'off' ? 'off' : 'change' }); } catch (e) { /* 读不到就当没设置 */ }
+const saveAI = () => { try { localStorage.setItem(AI_LS, JSON.stringify(AIS)); } catch (e) { toast('浏览器不允许保存设置'); } };
+let MARKET_AI = null;   // data/ai-report.json：GitHub 盯盘结果（checked 上次检查时间，history 变化提醒）
+const AI_SYSTEM = `你是一位冷静、不追涨杀跌的基金投资顾问，用简单的中文给完全不懂投资的新手讲解。
+规则：
+1. 买卖建议由页面的固定规则算出来（估值分位、比例偏离、分批卖出等），你负责解释原因，不要推翻它，也不要给出与规则矛盾的具体操作。如果你认为规则有风险，可以单独提醒“值得注意”。
+2. 只使用用户给你的数据，不要编造净值、收益、新闻或预测具体涨跌。数据不全时直接说不知道。
+3. 不追热点，不鼓励频繁交易，不承诺收益。提醒风险时具体、平实，不吓人。
+4. 回答简短：先一句话结论，再分点说明，每点一两句。不用表格。总长度控制在 400 字以内。`;
+function aiContext(A) {
+  const lv = currentLevel();
+  const sig = (k, f) => { const s = sigOf(k, f); return `${s.t}（买入倍数 ${s.m}）`; };
+  return {
+    今天: today(), 数据日期: dataDate(), 风险档位: lv.level.n, 是否示例持仓: !!P.example,
+    目标比例: A.T, 当前比例: Object.fromEntries(C.cats.map(c => [c.n, +A.w[c.k].toFixed(1)])),
+    总资产: Math.round(A.total), 持有收益: Math.round(A.profit), 每月定投: A.monthly,
+    市场: { 沪深300估值分位: idxPct, 标普500估值分位: M.sp500 && M.sp500.pePct10y, 纳指100估值分位: M.ndx && M.ndx.pePct10y,
+      红利低波股息率: M.divLowVol && M.divLowVol.dy, 红利低波自身估值分位: divPct, 中国10年国债: M.cgb10y && M.cgb10y.yield, 美国10年国债: M.ust10y && M.ust10y.yield,
+      信号: { 宽基: sig('index'), 红利低波: sig('div'), 标普500: SIGV.sp500 && SIGV.sp500.t, 纳指100: SIGV.ndx && SIGV.ndx.t } },
+    持仓: A.items.map(i => ({ 名称: i.fund ? i.fund.short || i.fund.name : i.name, 代码: /^\d{6}$/.test(i.code) ? i.code : '', 类别: CAT[i.cat].n, 在推荐名单: !!(i.fund && i.fund.pick), 金额: Math.round(i.amount), 收益率: +((i.amount - i.profit) > 0 ? i.profit / (i.amount - i.profit) * 100 : 0).toFixed(1) })),
+    规则给出的建议: A.advice.map(x => ({ 基金: x.fund ? x.fund.short || x.fund.name : x.name, 操作: x.adv.t, 金额: x.adv.amt || 0, 理由: x.adv.why.join(' ') })),
+    本月定投计划: A.plan.filter(p => p.amt >= 1).map(p => ({ 基金: p.fund.short || p.fund.name, 金额: Math.round(p.amt) })),
+    卖出的钱怎么买: A.reinvest.filter(r => r.amt >= 1).map(r => ({ 基金: r.fund.short || r.fund.name, 金额: Math.round(r.amt) }))
+  };
+}
+function fundContext(f) {
+  return { 名称: f.name, 代码: f.code, 类别: CAT[f.cat].n, 跟踪: f.index || '', 推荐: !!f.pick, 评分: f.score, 同类排名: `${f.rank}/${f.peers}`,
+    近1年: f.ret1y, 近3年: f.ret3y, 近3年最大回撤: f.maxDd3y, 规模亿: f.scaleYi, 年费率: totalFee(f), 估值信号: sigOf(f.cat, f).t, 逐年收益: f.yearRets,
+    我的判断: { 为什么: f.why, 风险: f.risk, 何时卖: f.exit } };
+}
+/* 调用 DeepSeek（OpenAI 兼容接口），流式返回 */
+async function callAI(messages, onText, signal) {
+  if (!AIS.key) throw { code: 'nokey' };
+  let res;
+  try {
+    res = await fetch(C.ai.baseUrl.replace(/\/$/, '') + '/chat/completions', {
+      method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AIS.key },
+      body: JSON.stringify({ model: AIS.model, messages, stream: true, max_tokens: C.ai.maxTokens, temperature: 0.3 })
+    });
+  } catch (e) { if (e && e.name === 'AbortError') throw { code: 'abort' }; throw { code: 'network' }; }
+  if (!res.ok) { let msg = ''; try { msg = (await res.json()).error.message; } catch (e) { /* 没有错误详情 */ } throw { code: res.status, msg }; }
+  const reader = res.body.getReader(), dec = new TextDecoder(); let buf = '', text = '', thinking = '';
+  for (;;) {
+    const { value, done } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n'); buf = lines.pop();
+    for (const line of lines) {
+      const t = line.trim(); if (!t.startsWith('data:')) continue;
+      const data = t.slice(5).trim(); if (data === '[DONE]') continue;
+      try { const d = JSON.parse(data).choices[0].delta || {}; if (d.reasoning_content) thinking += d.reasoning_content; if (d.content) text += d.content; onText(text, thinking); } catch (e) { /* 半行数据，等下一段 */ }
+    }
+  }
+  return text;
+}
+function aiError(e) {
+  if (!e) return 'AI 调用失败。';
+  if (e.code === 'nokey') return '还没填 DeepSeek API key。到“我的 → AI 助手”里填写。';
+  if (e.code === 'network') return '连不上 DeepSeek：可能是网络问题，或者浏览器拦截了请求。稍后再试；一直不行就告诉维护的人。';
+  if (e.code === 401) return 'API key 不对或已失效。到 DeepSeek 开放平台重新生成一个，再填到“我的 → AI 助手”。';
+  if (e.code === 402) return 'DeepSeek 账户余额不足，充值后再试。';
+  if (e.code === 429) return '请求太频繁，等一分钟再试。';
+  if (e.code === 'abort') return '已停止。';
+  return `AI 调用失败（${esc(e.code)}${e.msg ? '：' + esc(e.msg) : ''}）。`;
+}
+/* 把 AI 的回答转成简单排版：加粗、分点、换行。先转义，防止插入网页代码 */
+function mdLite(t) {
+  return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^#{1,4}\s*(.+)$/gm, '<b>$1</b>')
+    .split(/\n{2,}/).map(par => /^\s*([-*•]|\d+[.、])\s/m.test(par)
+      ? '<ul>' + par.split('\n').filter(Boolean).map(l => `<li>${l.replace(/^\s*([-*•]|\d+[.、])\s*/, '')}</li>`).join('') + '</ul>'
+      : `<p>${par.replace(/\n/g, '<br>')}</p>`).join('');
+}
+let aiBusy = null;   // 正在进行的 AI 请求的 AbortController
+async function runAI(kind, opts) {
+  opts = opts || {};
+  const box = (!opts.silent && document.getElementById(opts.box || 'ai-out')) || document.createElement('div');
+  if (aiBusy) aiBusy.abort();
+  const ctl = new AbortController(); aiBusy = ctl;
+  const A = analyze();
+  let user;
+  if (kind === 'review') user = `请根据下面的数据，用新手听得懂的话解读本月该怎么做：先一句话总结，然后说明最重要的 2–4 件事和原因，最后说一条需要注意的风险。\n数据：${JSON.stringify(aiContext(A))}`;
+  else if (kind === 'fund') user = `请用新手听得懂的话点评这只基金：它适合放在组合里做什么、现在估值情况、主要风险、我该怎么对待它。\n这只基金：${JSON.stringify(fundContext(FUND[opts.code]))}\n我的整体情况：${JSON.stringify(aiContext(A))}`;
+  else user = `我的问题：${opts.q}\n参考数据：${JSON.stringify(aiContext(A))}`;
+  box.hidden = false; box.innerHTML = '<p class="note">AI 正在分析…</p>';
+  const stopBtn = document.getElementById(opts.stop || 'ai-stop'); if (stopBtn) stopBtn.hidden = false;
+  try {
+    const text = await callAI([{ role: 'system', content: AI_SYSTEM }, { role: 'user', content: user }], (t, th) => {
+      box.innerHTML = t ? mdLite(t) : `<p class="note">AI 正在思考…${th ? `（已想了 ${th.length} 字）` : ''}</p>`;
+    }, ctl.signal);
+    box.innerHTML = mdLite(text) + `<p class="note">AI 生成，仅供参考；具体操作以上面的规则建议为准。${esc(AIS.model)} · ${new Date().toLocaleString('zh-CN', { hour12: false })}</p>`;
+    if (kind === 'review') { P.aiReport = { at: new Date().toISOString(), text, model: AIS.model, example: !!P.example, fp: adviceFingerprint(A) }; save(); if (opts.silent) { toast('AI 已更新持仓解读'); if ((location.hash || '#home') === '#home') render(true); } }
+  } catch (e) { box.innerHTML = `<p class="note err">${aiError(e)}</p>`; if (opts.silent) P.aiFail = today(); }
+  finally { if (aiBusy === ctl) aiBusy = null; if (stopBtn) stopBtn.hidden = true; }
+}
+/* 按变化触发：只有你的操作建议变了（比如某只从“持有”变成“止盈”），或者到了每月定投日，才让 AI 重新解读 */
+function adviceFingerprint(A) { return A.advice.map(x => `${x.code}:${x.adv.t}`).sort().join('|'); }
+function aiDue() {
+  if (!AIS.key || AIS.auto === 'off' || P.example) return false;
+  const r = P.aiReport; if (!r || !r.at || r.example) return true;
+  if (r.fp !== adviceFingerprint(analyze())) return true;
+  return daysToInvest().n === 0 && r.at.slice(0, 10) !== today();
+}
+function aiReportHTML(r) {
+  if (!r) return '';
+  return `<div class="ai-text">${mdLite(r.text)}</div><p class="note">${esc(new Date(r.at).toLocaleString('zh-CN', { hour12: false }))} 生成 · ${esc(r.model)}。AI 只做解读，操作以规则建议为准。</p>`;
+}
+function marketAlerts(days) {
+  const h = MARKET_AI && Array.isArray(MARKET_AI.history) ? MARKET_AI.history : [];
+  const since = Date.now() - days * 86400000;
+  return h.filter(x => x && typeof x.text === 'string' && Date.parse(String(x.date).replace(' ', 'T') + ':00+08:00') >= since);
+}
+function alertHTML(x) { return `<div class="alert"><div class="sub n">${esc(x.date)} · ${x.model === 'rules' ? '规则提醒' : 'AI 提醒'}</div><div class="ai-text">${mdLite(x.text)}</div></div>`; }
+function aiCardHome() {
+  const mine = P.aiReport && !P.aiReport.example ? P.aiReport : null;
+  const recent = marketAlerts(30), checked = MARKET_AI && MARKET_AI.checked;
+  return `<section class="card span2" aria-label="盯盘与 AI 解读">
+    <div class="card-h"><h3>盯盘</h3><a class="more" href="#analysis-ai">${AIS.key ? '问 AI ›' : '历史提醒 ›'}</a></div>
+    ${recent.length ? `<h4 class="ai-h">最近的变化提醒</h4>${alertHTML(recent[0])}${recent.length > 1 ? `<p class="note">近 30 天共 ${recent.length} 条提醒，全部记录在“买卖分析”页。</p>` : ''}`
+      : `<p class="calm">${checked ? `持续盯盘中，上次检查 ${esc(checked)}。` : '持续盯盘中。'}最近 30 天没有需要你注意的变化，按计划执行就好。</p>`}
+    ${mine ? `<h4 class="ai-h">你的持仓解读</h4>${aiReportHTML(mine)}` : AIS.key ? '<p class="note">录入真实持仓后，建议有变化或到了定投日，AI 会自动解读一次。</p>' : '<p class="note">在“我的 → AI 助手”填上 DeepSeek key，建议有变化时 AI 会用大白话给你解读。</p>'}
+  </section>`;
+}
 
 /* ================= 路由 ================= */
 let curView = '';
@@ -925,18 +1079,19 @@ function renderInner(force) {
   $('#who').textContent = P.name; $('#who-i').textContent = (P.name || '我').slice(0, 1);
   if (same) window.scrollTo(0, y);
   else {
-    const anchor = { 'analysis-plan': 'sec-plan', 'analysis-market': 'sec-market', 'me-quiz': 'me-quiz' }[h];
+    const anchor = { 'analysis-plan': 'sec-plan', 'analysis-market': 'sec-market', 'analysis-ai': 'sec-ai', 'me-quiz': 'me-quiz', 'me-ai': 'me-ai' }[h];
     if (anchor) document.getElementById(anchor)?.scrollIntoView(); else window.scrollTo(0, 0);
   }
   if (h.startsWith('fund-')) loadLive(h.slice(5));
   if (tab === 'holdings') bindHoldings();
+  if (tab === 'analysis' && $('#ai-q')) $('#ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aiAction('ask'); } });
   if (tab === 'me') bindMe();
 }
 window.addEventListener('hashchange', () => { delArm = false; render(); });
 
 /* ================= 交互 ================= */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-cmp],[data-ff],[data-copy],[data-back],[data-del],[data-clear],#add-btn,[data-checkin],[data-uncheck],[data-user],[data-adduser],[data-delask],[data-delcancel],[data-deluser],[data-export],[data-import],[data-reset]');
+  const t = e.target.closest('[data-cmp],[data-ff],[data-copy],[data-back],[data-del],[data-clear],#add-btn,[data-checkin],[data-uncheck],[data-user],[data-adduser],[data-delask],[data-delcancel],[data-deluser],[data-export],[data-import],[data-reset],[data-ai]');
   if (!t) return;
   const d = t.dataset;
   if (d.cmp) { cmpCat = d.cmp; document.querySelectorAll('[data-cmp]').forEach(b => b.setAttribute('aria-pressed', b === t)); $('#cmp').innerHTML = compareTable(cmpCat); }
@@ -962,10 +1117,29 @@ document.addEventListener('click', e => {
   else if ('delask' in d) { delArm = true; render(true); }
   else if ('delcancel' in d) { delArm = false; render(true); }
   else if ('deluser' in d) { delete STORE.profiles[STORE.current]; STORE.current = Object.keys(STORE.profiles)[0]; P = STORE.profiles[STORE.current]; delArm = false; save(); render(true); toast('已删除'); }
+  else if (d.ai) aiAction(d.ai, t);
   else if ('export' in d) exportBackup();
   else if ('reset' in d) { if (!resetArm) { resetArm = true; t.textContent = '再点一次，确认清空'; return; } STORE = { current: 'p1', profiles: { p1: newProfile('我') } }; P = STORE.profiles.p1; resetArm = false; save(); render(true); toast('已重置'); }
   else if ('import' in d) $('#import-file').click();
 });
+function aiAction(act, t) {
+  if (act === 'review') runAI('review', { box: 'ai-out' });
+  else if (act === 'stop') { if (aiBusy) aiBusy.abort(); }
+  else if (act === 'ask') { const q = ($('#ai-q').value || '').trim(); if (!q) { toast('先输入问题'); $('#ai-q').focus(); return; } runAI('ask', { q, box: 'ai-ans' }); }
+  else if (act === 'fund') runAI('fund', { code: t.dataset.code, box: 'ai-fund', stop: 'none' });
+  else if (act === 'savekey') {
+    const k = ($('#ai-key').value || '').trim();
+    if (k && !/^sk-[A-Za-z0-9_-]{10,}$/.test(k)) { toast('key 的格式不对，一般是 sk- 开头'); return; }
+    if (k) AIS.key = k; AIS.model = $('#ai-model').value; AIS.auto = $('#ai-auto').value; saveAI(); render(true); toast(AIS.key ? '已保存' : '已保存设置（还没有 key）');
+  }
+  else if (act === 'delkey') { AIS.key = ''; saveAI(); render(true); toast('已删除 key'); }
+  else if (act === 'testkey') {
+    const box = $('#ai-test'); box.hidden = false; box.textContent = '正在测试…';
+    callAI([{ role: 'user', content: '请只回复两个字：正常' }], tx => { box.textContent = '收到回复：' + tx; })
+      .then(tx => { box.textContent = `连接正常（${AIS.model} 回复：${tx.slice(0, 20)}）。`; })
+      .catch(e => { box.innerHTML = aiError(e); });
+  }
+}
 function bindHoldings() {
   const ci = $('#code-input');
   ci.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); findCode(); } });
@@ -982,6 +1156,7 @@ function bindHoldings() {
   });
 }
 function bindMe() {
+  $('#ai-key').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aiAction('savekey'); } });
   $('#pname').addEventListener('change', e => { P.name = e.target.value.trim().slice(0, 12) || '我'; save(); render(true); });
   $('#pref-monthly').addEventListener('change', e => { const v = Math.max(0, Number(e.target.value) || 0); P.monthly = v; save(); toast('已保存'); });
   $('#pref-day').addEventListener('change', e => { const v = Math.min(28, Math.max(1, Math.round(Number(e.target.value) || 10))); P.prefs.day = v; e.target.value = v; save(); toast('已保存'); });
@@ -1055,10 +1230,12 @@ async function boot() {
   FUNDS = C.funds.map(cf => Object.assign({ code: cf.code }, byCode[cf.code] || {}, cf));
   FUND = Object.fromEntries(FUNDS.map(f => [f.code, f]));
   CAT = Object.fromEntries(C.cats.map(c => [c.k, c]));
+  try { const r2 = await fetch('data/ai-report.json?v=' + Math.floor(Date.now() / 600000), { cache: 'no-cache' }); if (r2.ok) { const j = await r2.json(); if (j && typeof j.text === 'string') MARKET_AI = j; } } catch (e) { /* 还没有市场点评 */ }
   computeSignals(); scoreAll();
   $('#datestamp').textContent = '数据更新：' + (DATA.updated || '—');
   $('#sidefoot').textContent = `数据更新：${DATA.updated || '—'}。净值、估值每个交易日自动更新，基金详情页显示盘中实时估值。`;
   render(true);
+  if (aiDue() && P.aiFail !== today()) setTimeout(() => runAI('review', { silent: true }), 1500);   // 定时分析
 }
 boot();
 })();

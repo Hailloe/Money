@@ -26,6 +26,25 @@
 
 ---
 
+## 盯盘与 AI 助手（DeepSeek，可选）
+
+**原则：持续盯着，但只在真正有变化时才说话，不天天写文章。**
+
+- **自动盯盘（不用开网站）**：每次 GitHub 更新数据后运行 `scripts/ai_report.py`，和上次的状态对比：
+  1. 沪深300、标普500、纳指100 的估值档位变化；红利低波息差档位变化（档位阈值读自 `config.js` 的 `rules`，和网页同一套）
+  2. 红利低波两个信号开始打架或不再打架（`divPeCap`）
+  3. 推荐基金从近一年最高点回撤超过 15%；之后每再加深 10 个百分点才再提醒，回撤修复到 7.5% 以内后重置
+  4. 推荐基金净值超过 `staleDays` 天没更新
+  - 没有变化：不调用 AI，只记“上次检查”时间；有变化：DeepSeek 写一条 150 字以内的提醒（没设密钥时用规则文字）
+  - 结果在 `data/ai-report.json`：`checked` 上次检查时间，`state` 上次的信号状态，`history` 最近 60 条提醒
+  - 第一次运行只记录状态，不发提醒
+  - 开启 AI 写提醒：仓库 **Settings → Secrets and variables → Actions → New repository secret**，名字 `DEEPSEEK_API_KEY`
+- **网页里的 AI**：我的 → AI 助手，填 DeepSeek API key（只保存在这台设备浏览器的 `money.ai`，不进备份，不上传）
+  - 买卖分析页：“让 AI 解读本月建议”、直接提问、盯盘历史提醒；基金详情页：“问 AI 这只基金”
+  - 自动解读：打开网站时，只有操作建议变了（按每只基金的建议生成“指纹”对比），或者到了每月定投日，才重新解读
+  - 提问时会把持仓金额、本页建议和市场数据发给 DeepSeek（不发名字）
+- AI 只负责解释，不改变规则引擎的买卖建议。提示词在 `app.js` 的 `AI_SYSTEM` 和 `scripts/ai_report.py` 的 `SYSTEM`。
+
 ## 文件说明
 
 | 文件 | 作用 | 需要改吗 |
@@ -34,6 +53,7 @@
 | `data/seed.json` | 不常变的基金信息：费率、经理任职起始、跟踪指数、公告提示 | 基金降费或换经理时手动改 |
 | `data/data.json` | 每日数据（净值、收益、回撤、规模、估值、国债收益率） | **不用改**，自动生成 |
 | `scripts/update_data.py` | 抓数据、算指标，生成 `data/data.json` | 数据源接口变了才改 |
+| `scripts/ai_report.py` | 盯盘：检查信号变化，有变化才写提醒，生成 `data/ai-report.json`（AI 文字需要仓库密钥 `DEEPSEEK_API_KEY`） | 想改提醒条件或风格时改 |
 | `.github/workflows/update-data.yml` | 交易日北京时间 22:30、次日 08:00 自动运行上面的脚本 | 一般不用改 |
 | `app.js` | 页面和规则引擎 | 改功能时才动 |
 | `style.css` | 苹果 Mac / iOS 风格的样式，浅色深色两套 | 改外观时才动 |
