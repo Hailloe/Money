@@ -542,6 +542,7 @@ function viewHome(A) {
   const hist = P.history.filter(h => h.total > 0).map(h => [h.d, h.total]);
   return `<div class="view">
   ${dataAge()}${exampleBanner()}${riskBanner()}${shortBanner()}
+  ${calmAlerts(A).length ? `<div class="grid3">${calmCard(A, true)}</div>` : ''}
   <div class="grid3">
     <section class="hero span2" aria-label="资产总览">
       <div class="hero-top"><span class="lbl">总资产（元）</span><span class="pill">${lv.level.n}型 · 长期估算年化约 ${A.expRet.toFixed(1)}%</span></div>
@@ -625,6 +626,7 @@ function viewAnalysis(A) {
       </div>`).join('')}</div>
     ${zeroHint(A)}<p class="note">处理顺序：先卖掉不该拿的，再换掉差的，再处理超配和估值过高的，最后按计划买。卖出、换基都分 ${C.rules.sellMonths} 个月做完，不一次清仓；估值便宜时不减仓。</p>
   </section>
+  ${calmCard(A, false)}
   ${A.freed > 0 ? `<section class="card" id="sec-reinvest">
     <div class="card-h"><h3>本月卖出的钱怎么买</h3><span class="sub">共 ${fmt(A.freed)}</span></div>
     <div class="tbox"><table><thead><tr><th>买入</th><th>原因</th><th class="r">金额</th></tr></thead><tbody>
@@ -665,6 +667,7 @@ function viewAnalysis(A) {
   ${(M.hs300Hist && M.hs300Hist.length) || (M.divLowVolHist && M.divLowVolHist.length) ? `<div class="grid2">
     <section class="card"><div class="card-h"><h3>沪深300 逐年涨跌</h3><span class="sub">${M.hs300HistSrc === '联接基金净值' ? '按联接基金净值' : '指数'}，红涨绿跌</span></div>${yearBars(M.hs300Hist)}</section>
     <section class="card"><div class="card-h"><h3>红利低波 逐年涨跌</h3><span class="sub">${M.divLowVolHistSrc === '联接基金净值' ? '按联接基金净值' : '指数'}，红涨绿跌</span></div>${yearBars(M.divLowVolHist)}</section></div>` : ''}
+  ${stressCard(A)}
   <section class="card" id="sec-compare">
     <div class="card-h"><h3>同类对比：哪只更好</h3><span class="sub">评分不看近1年涨幅</span></div>
     <div class="seg" role="group" aria-label="选择类别">${C.cats.filter(c => c.k !== 'cash').map(c => `<button class="segbtn" type="button" data-cmp="${c.k}" aria-pressed="${cmpCat === c.k}">${c.n}</button>`).join('')}</div>
@@ -933,6 +936,94 @@ function viewMe() {
   </div>`;
 }
 let delArm = false, resetArm = false;
+
+/* ================= 下跌时的冷静助手 =================
+ * 1. 压力测试：按你的真实持仓，算三种下跌情况下账户剩多少（跌之前就想清楚能不能扛住）
+ * 2. 真跌的时候：推荐基金从近一年高点跌过提醒线，就用这只基金自己过去 3 年的真实净值，
+ *    算出历史上跌这么多的次数、最深跌到多少、多久回到高点，再告诉你该做什么、不该做什么
+ * 3. “我很想卖掉”：卖之前的冷静清单
+ */
+const DD_LINE = { bond: 3, index: 15, div: 15, overseas: 20, active: 20 };   // 和后台盯盘的提醒线一致
+const STRESS = [
+  { n: '小跌', d: '比较常见的回调', f: { index: 10, div: 7, overseas: 10, active: 12, bond: 0, cash: 0 } },
+  { n: '大跌', d: '几年一次的明显下跌', f: { index: 25, div: 18, overseas: 25, active: 30, bond: 2, cash: 0 } },
+  { n: '熊市', d: '十年一两次的大熊市，按各类历史上的大跌幅度', f: Object.fromEntries(C.cats.map(c => [c.k, c.dd])) }
+];
+function curvePoints(f) { return (f && Array.isArray(f.curve) ? f.curve : []).filter(p => Array.isArray(p) && p.length === 2 && p[1] > 0); }
+/* 当前距近一年最高点的回撤 */
+function currentDrawdown(f) {
+  const c = curvePoints(f); if (c.length < 10) return null;
+  const last = c[c.length - 1], from = new Date(Date.parse(last[0]) - 365 * 86400000).toISOString().slice(0, 10);
+  const hi = Math.max(...c.filter(p => p[0] >= from).map(p => p[1]));
+  return { dd: (last[1] / hi - 1) * 100, date: last[0] };
+}
+/* 过去 3 年里，跌幅超过 line% 的几段下跌：最深跌多少、多久回到原来的高点 */
+function drawdownEpisodes(f, line) {
+  const c = curvePoints(f), eps = []; if (c.length < 10) return eps;
+  let peak = c[0], ep = null;
+  for (const p of c) {
+    if (p[1] >= peak[1]) { if (ep) { ep.recover = p[0]; eps.push(ep); ep = null; } peak = p; continue; }
+    const dd = (p[1] / peak[1] - 1) * 100;
+    if (!ep && dd <= -line) ep = { peak: peak[0], deepest: dd, bottom: p[0], recover: null };
+    if (ep && dd < ep.deepest) { ep.deepest = dd; ep.bottom = p[0]; }
+  }
+  if (ep) eps.push(ep);
+  return eps;
+}
+const monthsBetweenDates = (a, b) => Math.max(1, Math.round((Date.parse(b) - Date.parse(a)) / (30.44 * 86400000)));
+function stressCard(A) {
+  if (!A.total) return '';
+  const rows = STRESS.map(s => { const loss = C.cats.reduce((a, c) => a + A.byCat[c.k] * (s.f[c.k] || 0) / 100, 0); return { s, loss, left: A.total - loss, pct: loss / A.total * 100 }; });
+  const worst = rows[rows.length - 1];
+  return `<section class="card" id="sec-stress">
+    <div class="card-h"><h3>压力测试：大跌时你会怎样</h3><span class="sub">按你现在的持仓</span></div>
+    <div class="tbox"><table><thead><tr><th>情况</th><th class="r">可能亏</th><th class="r">账户剩</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td><b>${r.s.n}</b><div class="sub">${r.s.d}</div></td><td class="r down">−${fmt(r.loss).slice(1)}（${r.pct.toFixed(0)}%）</td><td class="r">${fmt(r.left)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="note">${P.example ? '这是示例持仓的结果。' : ''}最坏的情况，账户会从 ${fmt(A.total)} 跌到大约 ${fmt(worst.left)}。现在就想一想：看到这个数字，你会不会想全部卖掉？如果会，说明现在的配置对你太激进了，到“我的 → 风险测评”里如实重做一次，系统会降低股票比例。宁可少赚一点，也不要在最低点卖出。</p>
+    <p class="note">这些跌幅是按各类基金历史上常见的下跌估算的，不是预测；真实的下跌可能更小，也可能更大。</p>
+  </section>`;
+}
+function calmAlerts(A) {
+  const held = new Set(A.items.map(i => i.code));
+  return FUNDS.filter(f => (f.pick || held.has(f.code)) && DD_LINE[f.cat]).map(f => ({ f, cur: currentDrawdown(f) }))
+    .filter(x => x.cur && x.cur.dd <= -DD_LINE[x.f.cat]).sort((a, b) => a.cur.dd - b.cur.dd);
+}
+function calmCard(A, compact) {
+  const al = calmAlerts(A); if (!al.length) return '';
+  const main = al[0], line = DD_LINE[main.f.cat];
+  const eps = drawdownEpisodes(main.f, line), done = eps.filter(e => e.recover), ongoing = eps.find(e => !e.recover);
+  const hist = done.length ? `过去 3 年里，${esc(main.f.short || main.f.name)}有 ${done.length} 次跌超 ${line}% 后又回到了原来的高点：最深一次跌了 ${Math.abs(Math.min(...done.map(e => e.deepest))).toFixed(0)}%，回到高点最快 ${Math.min(...done.map(e => monthsBetweenDates(e.peak, e.recover)))} 个月、最慢 ${Math.max(...done.map(e => monthsBetweenDates(e.peak, e.recover)))} 个月。`
+    : `过去 3 年的数据里，${esc(main.f.short || main.f.name)}还没有过跌超 ${line}% 又涨回来的完整记录，所以没法用它自己的历史说话。`;
+  const sig = sigOf(main.f.cat, main.f), heldIt = A.items.find(i => i.code === main.f.code);
+  const lines = `<ul class="calm-list">
+      <li><b>该做的：</b>按“本月定投计划”照常买。${sig.m > 1 ? `现在估值${sig.t}，规则已经让你多买（${sig.m} 倍），跌下来的时候买到的份额更多。` : '规则会根据估值自动调整买多少，不用自己加减。'}</li>
+      <li><b>不该做的：</b>割肉卖出、停止定投、每天打开看好几次。在低点卖掉，等于把账面亏损变成真亏。</li>
+      <li><b>可以做的：</b>关掉 App，下个定投日再打开。想清楚这笔钱 3 年内不用，就不必理会这段下跌。</li></ul>`;
+  if (compact) return `<section class="card calm-card span2" aria-label="下跌时的冷静助手">
+    <div class="card-h"><h3>正在下跌，先别慌</h3><a class="more" href="#analysis-calm">看详情 ›</a></div>
+    <p><b>${esc(main.f.short || main.f.name)}</b> 从近一年高点跌了 <b class="n">${Math.abs(main.cur.dd).toFixed(1)}%</b>${al.length > 1 ? `，另外还有 ${al.length - 1} 只也跌过了提醒线` : ''}。</p>
+    <p class="note">${hist}</p>${lines}</section>`;
+  return `<section class="card calm-card" id="sec-calm">
+    <div class="card-h"><h3>下跌时的冷静助手</h3><span class="sub">用真实净值算</span></div>
+    <div class="rows">${al.map(x => `<a class="row" href="#fund-${x.f.code}"><div class="t">${dot(x.f.cat)}<span class="ell">${esc(x.f.short || x.f.name)}</span></div><div class="r n down strong">−${Math.abs(x.cur.dd).toFixed(1)}%</div><div class="s">从近一年最高点算，截至 ${fullDate(x.cur.date)}（提醒线 ${DD_LINE[x.f.cat]}%）</div></a>`).join('')}</div>
+    <p class="note">${hist}${ongoing ? ' 现在这段下跌还没结束。' : ''}过去回得来，不代表这次也一定按同样的时间回来。真正决定结果的，是你能不能在下跌时继续按计划买、不在低点卖出。</p>
+    ${lines}
+    ${heldIt ? `<button class="btn ghost" type="button" data-calm="want">我很想卖掉</button><div id="calm-check" hidden></div>` : ''}
+  </section>`;
+}
+function calmChecklist(A) {
+  const al = calmAlerts(A), x = al[0], it = x && A.items.find(i => i.code === x.f.code); if (!it) return '';
+  const loss = Math.min(0, it.profit);
+  return `<div class="checklist">
+    <p><b>卖之前，先回答 3 个问题：</b></p>
+    <ol><li>这笔钱 3 年内要用吗？不用的话，现在的下跌和你没有关系。</li>
+      <li>买它的理由变了吗？（看基金详情里的“我的判断”）理由没变，就不该因为价格下跌而卖。</li>
+      <li>如果再跌 10%，你会更想卖还是更想买？如果是更想卖，问题在配置太激进，而不在这只基金。</li></ol>
+    ${loss < 0 ? `<p>现在卖掉，等于把 <b class="down">${fmt(-loss)}</b> 的账面亏损变成真亏，以后涨回来也和你没关系了。</p>` : '<p>这只现在还没亏，但卖掉就错过了以后便宜价位的定投。</p>'}
+    <p><b>建议：先等 24 小时。</b>明天还是想卖，到“我的 → 风险测评”重新如实答一次，让系统给你一个更稳的配置，按新配置分批调整，比一次性卖光好。</p>
+    <p class="note">如果最后还是卖了，记得在看板上“本月打卡”如实选“跌了，我卖了”，系统会据此调整你的配置。</p></div>`;
+}
 
 /* ================= 定投日历提醒 =================
  * 生成一个 .ics 日历文件：每月定投日 9:30 提醒，每年 1 月一次年度体检。手机日历打开就能添加，不需要账号。
@@ -1276,7 +1367,7 @@ function renderInner(force) {
   $('#who').textContent = P.name; $('#who-i').textContent = (P.name || '我').slice(0, 1);
   if (same) window.scrollTo(0, y);
   else {
-    const anchor = { 'me-cal': 'me-cal', 'analysis-plan': 'sec-plan', 'analysis-market': 'sec-market', 'analysis-ai': 'sec-ai', 'me-quiz': 'me-quiz', 'me-ai': 'me-ai', 'holdings-ledger': 'sec-ledger' }[h];
+    const anchor = { 'analysis-calm': 'sec-calm', 'analysis-stress': 'sec-stress', 'me-cal': 'me-cal', 'analysis-plan': 'sec-plan', 'analysis-market': 'sec-market', 'analysis-ai': 'sec-ai', 'me-quiz': 'me-quiz', 'me-ai': 'me-ai', 'holdings-ledger': 'sec-ledger' }[h];
     if (anchor) document.getElementById(anchor)?.scrollIntoView(); else window.scrollTo(0, 0);
   }
   if (h.startsWith('fund-')) loadLive(h.slice(5));
@@ -1288,7 +1379,7 @@ window.addEventListener('hashchange', () => { delArm = false; delTxn = null; led
 
 /* ================= 交互 ================= */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-cmp],[data-ff],[data-copy],[data-back],[data-del],[data-clear],#add-btn,[data-checkin],[data-uncheck],[data-user],[data-adduser],[data-delask],[data-delcancel],[data-deluser],[data-export],[data-import],[data-reset],[data-ai],[data-ledger],[data-cal]');
+  const t = e.target.closest('[data-cmp],[data-ff],[data-copy],[data-back],[data-del],[data-clear],#add-btn,[data-checkin],[data-uncheck],[data-user],[data-adduser],[data-delask],[data-delcancel],[data-deluser],[data-export],[data-import],[data-reset],[data-ai],[data-ledger],[data-cal],[data-calm]');
   if (!t) return;
   const d = t.dataset;
   if (d.cmp) { cmpCat = d.cmp; document.querySelectorAll('[data-cmp]').forEach(b => b.setAttribute('aria-pressed', b === t)); $('#cmp').innerHTML = compareTable(cmpCat); }
@@ -1317,6 +1408,7 @@ document.addEventListener('click', e => {
   else if (d.ai) aiAction(d.ai, t);
   else if (d.ledger) ledgerAction(d.ledger, t);
   else if ('cal' in d) downloadCalendar();
+  else if (d.calm === 'want') { const box = $('#calm-check'); box.hidden = !box.hidden; if (!box.hidden) box.innerHTML = calmChecklist(analyze()); }
   else if ('export' in d) exportBackup();
   else if ('reset' in d) { if (!resetArm) { resetArm = true; t.textContent = '再点一次，确认清空'; return; } STORE = { current: 'p1', profiles: { p1: newProfile('我') } }; P = STORE.profiles.p1; resetArm = false; save(); render(true); toast('已重置'); }
   else if ('import' in d) $('#import-file').click();
