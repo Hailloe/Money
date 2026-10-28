@@ -4,7 +4,7 @@
  * 改完提交到 GitHub，网站一两分钟后自动生效。
  */
 window.CONFIG = {
-  /* 六个类别。图表颜色在 style.css 的 --s-<类别> 里；ret/dd 是粗略的长期年化收益和熊市最大跌幅（%），只用来估算组合，不是预测 */
+  /* 六个类别（货币类只为兼容旧持仓保留：名单里已经没有余额宝，录进来的会被建议移出）。图表颜色在 style.css 的 --s-<类别> 里；ret/dd 是粗略的长期年化收益和熊市最大跌幅（%），只用来估算组合，不是预测 */
   cats: [
     { k: 'index',  n: '宽基指数', eq: true,  ret: 7,   dd: 35 },
     { k: 'div',    n: '红利低波', eq: true,  ret: 7,   dd: 25 },
@@ -15,14 +15,17 @@ window.CONFIG = {
   ],
 
   /* 风险等级 → 目标比例（%，每行加起来 100）。风险问卷决定用哪一档。
-     short（短期）只在问卷第 1 题选“1 年以内要用”时使用：一年内要用的钱不该放股票 */
+     short（短期）只在问卷第 1 题选“1 年以内要用”时使用：一年内要用的钱不该放股票。
+     不配余额宝（少买、暂停的钱留在你自己的银行卡里），也不配主动基金（为了只拿 5 只、少交费用） */
   levels: [
-    { k: 'short',        n: '短期', target: { index: 0,  div: 0,  overseas: 0,  bond: 70, active: 0,  cash: 30 } },
-    { k: 'conservative', n: '保守', target: { index: 15, div: 17, overseas: 8,  bond: 45, active: 5,  cash: 10 } },
-    { k: 'steady',       n: '稳健', target: { index: 22, div: 22, overseas: 11, bond: 32, active: 5,  cash: 8 } },
-    { k: 'balanced',     n: '平衡', target: { index: 27, div: 23, overseas: 15, bond: 20, active: 10, cash: 5 } },
-    { k: 'growth',       n: '进取', target: { index: 30, div: 25, overseas: 20, bond: 12, active: 10, cash: 3 } }
+    { k: 'short',        n: '短期', target: { index: 0,  div: 0,  overseas: 0,  bond: 100, active: 0, cash: 0 } },
+    { k: 'conservative', n: '保守', target: { index: 20, div: 17, overseas: 8,  bond: 55,  active: 0, cash: 0 } },
+    { k: 'steady',       n: '稳健', target: { index: 27, div: 22, overseas: 11, bond: 40,  active: 0, cash: 0 } },
+    { k: 'balanced',     n: '平衡', target: { index: 37, div: 23, overseas: 15, bond: 25,  active: 0, cash: 0 } },
+    { k: 'growth',       n: '进取', target: { index: 40, div: 25, overseas: 20, bond: 15,  active: 0, cash: 0 } }
   ],
+  /* 最多持有几只基金（新手只拿 5 只：沪深300、红利低波、标普500、纳指100、中短债） */
+  maxFunds: 5,
   defaultLevel: 'balanced',
 
   /* 买卖规则的阈值 */
@@ -42,7 +45,12 @@ window.CONFIG = {
     swapScoreGap: 8,       // 同类评分比推荐基金低 8 分以上，建议换
     sellMonths: 3,         // 卖出（名单外基金、换基、减仓）都分 3 个月做完
     staleDays: 10,         // 后台盯盘：净值超过 10 天没更新才提醒断更（国庆、春节长假会休市 9 天左右）
-    staleWeekdays: 5       // 网页横幅：净值超过 5 个工作日没更新就提示（周末不算，长假最多 5 个工作日）
+    staleWeekdays: 5,      // 网页横幅：净值超过 5 个工作日没更新就提示（周末不算，长假最多 5 个工作日）
+    // 趋势规则（可选，在“我的 → 偏好”打开）：只影响卖，不影响买。
+    // 价格在约 40 周（≈200 个交易日）均线之上、而且均线比 4 周前高，算“上升趋势”。
+    // 上升趋势里：超配放宽到 widen 个百分点才减仓；估值很贵也先不止盈，等跌破均线再按规则卖。
+    // 但估值分位到 hardPct 以上，或者超配到 widen 以上，照样减仓，防止拿过头。
+    trend: { ma: 40, slope: 4, widen: 10, hardPct: 90 }
   },
 
   /*
@@ -51,19 +59,14 @@ window.CONFIG = {
    * 数字（规模、收益、回撤等）不写在这里，由 scripts/update_data.py 每天自动更新到 data/data.json。
    */
   funds: [
-    { code: '000198', cat: 'cash', pick: true, split: 1, short: '余额宝',
-      why: '组合的弹药库：放应急钱，以及估值贵时少买省下来的钱。随时能取。',
-      risk: '收益只有 1% 左右，长期跑不赢通胀，不能多放。',
-      exit: '不卖。估值便宜的月份从这里取钱加仓。' },
-
-    { code: '007901', cat: 'bond', pick: true, split: 0.5, short: '汇添富中短债A',
+    { code: '007901', cat: 'bond', pick: true, split: 1, short: '汇添富中短债A',
       why: '久期短，利率上行、长期债券下跌时，短债跌得少，适合当组合里的稳定器。',
       risk: '收益不高；持有的企业债有信用风险。',
       exit: '回撤明显变大，或者规模缩水到很小时换掉。系统不会自动卖它，需要你在年度检查时判断。' },
-    { code: '217022', cat: 'bond', pick: true, split: 0.5, short: '招商产业债A',
+    { code: '217022', cat: 'bond', short: '招商产业债A',
       why: '老牌信用债基金，规模大、经历过多轮债市调整，长期收益比纯国债高一点。',
       risk: '久期比短债长，债市调整时会有回撤。',
-      exit: '连续两年收益落后同类，或者回撤明显变大时换掉。系统不会自动卖它，需要你在年度检查时判断。' },
+      exit: '不在 5 只组合里，债券只拿汇添富中短债一只。已经持有的会建议合并过去。' },
 
     { code: '460300', cat: 'index', pick: true, split: 1, short: '沪深300联接A',
       why: '买下中国最大的 300 家公司。管理费和托管费在同类里是最低一档，老牌产品，跟踪稳定。A 类没有每年的销售服务费，适合长期定投。',
@@ -100,14 +103,14 @@ window.CONFIG = {
       risk: '年费率比易方达那只高约 0.4%，长期拿着成本更高。',
       exit: '作为备选；已经持有的不用急着换，新钱买推荐的那只。' },
 
-    { code: '163406', cat: 'active', pick: true, split: 0.5, short: '兴全合润',
+    { code: '163406', cat: 'active', short: '兴全合润',
       why: '谢治宇管理多年，长期跑赢沪深300，风格稳定。',
       risk: '波动大，近 3 年最大回撤很深；规模大，灵活性下降。',
-      exit: '基金经理离任后观察半年再决定；连续 3 年跑输沪深300 就换。' },
-    { code: '161005', cat: 'active', pick: true, split: 0.5, short: '富国天惠',
+      exit: '不在 5 只组合里（主动基金费用高、要看基金经理）。已经持有的会分 3 个月卖掉，换成指数基金。' },
+    { code: '161005', cat: 'active', short: '富国天惠',
       why: '朱少醒是任期最长的基金经理之一，经历过多轮牛熊，风格一贯。',
       risk: '近几年收益落后于市场，风格偏成长。主动基金只放一小部分。',
-      exit: '基金经理离任，或连续 3 年跑输沪深300。' }
+      exit: '不在 5 只组合里（主动基金费用高、要看基金经理）。已经持有的会分 3 个月卖掉，换成指数基金。' }
   ],
 
   /* 风险问卷：每题选项分 1–4 分 */
