@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-29 00:38",
+ "updated": "2026-10-29 03:47",
  "market": {
   "bondNote": "2026 年长端利率上行，接近一半的中长期纯债基金今年没有赚到钱，所以债券部分以短久期为主。",
   "hs300": {
@@ -24,27 +24,27 @@
   "hs300Hist": [
    {
     "year": 2021,
-    "ret": -5.2
+    "ret": -2.04
    },
    {
     "year": 2022,
-    "ret": -21.63
+    "ret": -11.17
    },
    {
     "year": 2023,
-    "ret": -11.38
+    "ret": -4.95
    },
    {
     "year": 2024,
-    "ret": 14.68
+    "ret": 7.43
    },
    {
     "year": 2025,
-    "ret": 17.66
+    "ret": 10.05
    },
    {
     "year": 2026,
-    "ret": -11.79,
+    "ret": -5.3,
     "label": "2026至今",
     "note": "今年以来"
    }
@@ -52,27 +52,27 @@
   "divLowVolHist": [
    {
     "year": 2021,
-    "ret": 10.8
+    "ret": 18.1
    },
    {
     "year": 2022,
-    "ret": -1.9
+    "ret": 2.72
    },
    {
     "year": 2023,
-    "ret": 6.45
+    "ret": 10.81
    },
    {
     "year": 2024,
-    "ret": 17.84
+    "ret": 19.35
    },
    {
     "year": 2025,
-    "ret": 0.44
+    "ret": 3.59
    },
    {
     "year": 2026,
-    "ret": -0.92,
+    "ret": 2.92,
     "label": "2026至今",
     "note": "今年以来"
    }
@@ -91,11 +91,11 @@
    "date": "2026-10-27",
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
-  "hs300HistSrc": "指数",
-  "divLowVolHistSrc": "指数",
+  "hs300HistSrc": "联接基金净值",
+  "divLowVolHistSrc": "联接基金净值",
   "ust10y": {
-   "yield": 4.99,
-   "date": "2026-10-27",
+   "yield": 5.05,
+   "date": "2026-10-28",
    "src": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"
   }
  },
@@ -8006,7 +8006,7 @@
   "valuation": "ok",
   "cgb10y": "ok",
   "ust10y": "ok",
-  "hs300Hist": "ok",
-  "divLowVolHist": "ok"
+  "hs300Hist": "failed (用联接基金代替): Remote end closed connection without response",
+  "divLowVolHist": "failed (用联接基金代替): Remote end closed connection without response"
  }
 }
