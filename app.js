@@ -59,9 +59,10 @@ function cleanProfile(p, fallbackName) {
   out.aiFail = typeof p.aiFail === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.aiFail) ? p.aiFail : '';
   out.aiReport = p.aiReport && typeof p.aiReport.text === 'string' && typeof p.aiReport.at === 'string' ? { text: p.aiReport.text.slice(0, 8000), at: p.aiReport.at, model: String(p.aiReport.model || ''), example: !!p.aiReport.example, fp: typeof p.aiReport.fp === 'string' ? p.aiReport.fp : '', day: typeof p.aiReport.day === 'string' ? p.aiReport.day : '' } : null;
   const lg = p.ledger;
-  out.ledger = lg && typeof lg === 'object' && /^\d{4}-\d{2}-\d{2}$/.test(lg.start) && isFinite(+lg.startValue) && +lg.startValue >= 0
-    ? { start: lg.start, startValue: +lg.startValue, txns: (Array.isArray(lg.txns) ? lg.txns : []).filter(t => t && /^\d{4}-\d{2}-\d{2}$/.test(t.d) && ['in', 'out', 'buy', 'sell'].includes(t.type) && +t.amt > 0 && +t.amt <= 1e9)
-        .map((t, i) => ({ id: typeof t.id === 'string' ? t.id.slice(0, 40) : 'imp' + i, d: t.d, type: t.type === 'buy' ? 'in' : t.type === 'sell' ? 'out' : t.type, amt: Math.round(+t.amt * 100) / 100, plan: typeof t.plan === 'string' ? t.plan : undefined })).slice(-2000) }
+  const validDay = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00+08:00')) && new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d;
+  out.ledger = lg && typeof lg === 'object' && validDay(lg.start) && lg.start <= today() && isFinite(+lg.startValue) && +lg.startValue >= 0 && +lg.startValue <= 1e10
+    ? { start: lg.start, startValue: +lg.startValue, txns: (Array.isArray(lg.txns) ? lg.txns : []).filter(t => t && validDay(t.d) && ['in', 'out', 'buy', 'sell'].includes(t.type) && +t.amt > 0 && +t.amt <= 1e9)
+        .map((t, i, arr) => ({ id: typeof t.id === 'string' && arr.findIndex(x => x && x.id === t.id) === i ? t.id.slice(0, 40) : 'imp' + i + '-' + Math.random().toString(36).slice(2, 7), d: t.d, type: t.type === 'buy' ? 'in' : t.type === 'sell' ? 'out' : t.type, amt: Math.round(+t.amt * 100) / 100, plan: typeof t.plan === 'string' ? t.plan : undefined })).slice(-2000) }
     : null;
   out.sellPlans = {};
   if (p.sellPlans && typeof p.sellPlans === 'object') Object.entries(p.sellPlans).forEach(([k, v]) => { if (v && /^\d{4}-\d{2}$/.test(v.start)) out.sellPlans[k] = { start: v.start }; });
@@ -943,10 +944,17 @@ function xirr(flows) {
   // flows: [{ t: 距起点的年数, v: 金额（投入为负，收回为正） }]
   if (!flows.some(f => f.v < 0) || !flows.some(f => f.v > 0)) return null;
   const npv = r => flows.reduce((a, f) => a + f.v / Math.pow(1 + r, f.t), 0);
-  let lo = -0.99, hi = 10, fl = npv(lo), fh = npv(hi);
-  if (!isFinite(fl) || !isFinite(fh) || fl * fh > 0) return null;
-  for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2, fm = npv(mid); if (Math.abs(fm) < 1e-7) return mid; if (fl * fm < 0) { hi = mid; fh = fm; } else { lo = mid; fl = fm; } }
-  return (lo + hi) / 2;
+  const bisect = (lo, hi) => { let fl = npv(lo); for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2, fm = npv(mid); if (Math.abs(fm) < 1e-9) return mid; if (fl * fm < 0) hi = mid; else { lo = mid; fl = fm; } } return (lo + hi) / 2; };
+  // 在 ln(1+r) 上均匀扫描 −99.99% 到 +9900%，找出所有变号区间；有多个解时取最接近 0 的那个
+  const roots = []; const N = 600, a0 = Math.log(0.0001), a1 = Math.log(100);
+  let pr = Math.exp(a0) - 1, pv = npv(pr);
+  for (let k = 1; k <= N; k++) {
+    const r = Math.exp(a0 + (a1 - a0) * k / N) - 1, v = npv(r);
+    if (isFinite(pv) && isFinite(v) && pv * v <= 0) roots.push(bisect(pr, r));
+    pr = r; pv = v;
+  }
+  if (!roots.length) return null;
+  return roots.sort((x, y) => Math.abs(x) - Math.abs(y))[0];
 }
 const dayNum = s => Math.floor(Date.parse(s + 'T00:00:00+08:00') / 86400000);
 const fullDate = s => { const m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[1]}年${+m[2]}月${+m[3]}日` : ''; };
@@ -974,7 +982,8 @@ function goalGauge(v) {
 }
 function futureTable(monthly, start, exp) {
   const yrs = [5, 10];
-  const fv = (r, y) => { const m = r / 100 / 12, n = y * 12; return start * Math.pow(1 + m, n) + (m ? monthly * (Math.pow(1 + m, n) - 1) / m : monthly * n); };
+  // 月收益率用 (1+年化)^(1/12)−1，和上面的年化同一口径
+  const fv = (r, y) => { const m = Math.pow(1 + r / 100, 1 / 12) - 1, n = y * 12; return start * Math.pow(1 + m, n) + (m ? monthly * (Math.pow(1 + m, n) - 1) / m : monthly * n); };
   const rows = [['不顺的十年（2%）', 2], [`你的配置估算（${exp.toFixed(1)}%）`, exp], ['目标下沿（5%）', 5]];
   return `<div class="tbox"><table><thead><tr><th>假设年化</th>${yrs.map(y => `<th class="r">${y} 年后</th>`).join('')}</tr></thead><tbody>
     ${rows.map(([n, r]) => `<tr><td>${n}</td>${yrs.map(y => `<td class="r">${fmt(Math.round(fv(r, y) / 100) * 100)}</td>`).join('')}</tr>`).join('')}
@@ -989,6 +998,8 @@ function goalCard(A) {
   let body;
   if (P.example) body = '<p class="note">录入真实持仓后，点“开始记录”，系统会从那天起算你的真实年化收益。</p>';
   else if (!st) body = `<p style="font-size:13px">想知道自己实际赚了年化多少？从今天开始记录：系统把今天的总资产 ${fmt(A.total)} 记为起点，以后每次从银行卡转钱进来、或者转回银行卡时记一笔就行。</p><div class="btnrow"><button class="btn" type="button" data-ledger="start" ${A.total > 0 ? '' : 'disabled'}>开始记录年化</button></div>${A.total > 0 ? '' : '<p class="note">先在“持仓”页填上金额。</p>'}`;
+  else if (st.irr == null && st.days >= 90) body = `<div class="stats"><div class="stat"><span class="k">记账以来</span><span class="v n">${st.days} 天</span></div><div class="stat"><span class="k">累计收益</span><span class="v n ${cls(Math.round(st.gain))}">${signed(Math.round(st.gain))}</span></div><div class="stat"><span class="k">累计收益率</span><span class="v n ${cls(st.gainPct)}">${pctN(st.gainPct, 2)}</span></div></div>
+      <p class="note">这段时间的进出记录比较特殊（比如中途转出了大部分钱，或者账户几乎清空），算不出有意义的年化，只看累计收益。如果是记错了，到“持仓 → 记账”里检查一下。</p>`;
   else if (st.irr == null) body = `<div class="stats"><div class="stat"><span class="k">记账以来</span><span class="v n">${st.days} 天</span></div><div class="stat"><span class="k">累计收益</span><span class="v n ${cls(Math.round(st.gain))}">${signed(Math.round(st.gain))}</span></div><div class="stat"><span class="k">累计收益率</span><span class="v n ${cls(st.gainPct)}">${pctN(st.gainPct, 2)}</span></div></div>
       <p class="note">记满 3 个月（还差 ${Math.max(0, 90 - st.days)} 天）才显示年化。时间太短，年化数字会被一两天的涨跌放大，没有参考意义。</p>`;
   else {
@@ -1258,7 +1269,7 @@ document.addEventListener('click', e => {
   }
   else if (d.checkin) { const mk = monthKey(); P.journal = P.journal.filter(j => j.m !== mk); P.journal.push({ m: mk, choice: d.checkin, at: new Date().toISOString() }); P.journal.sort((a, b) => a.m < b.m ? -1 : 1); save(); render(true); toast(d.checkin === 'panic' || d.checkin === 'chase' ? '已记录。如实记录才能帮你改掉习惯。' : '已打卡'); }
   else if ('uncheck' in d) { const mk = monthKey(); P.journal = P.journal.filter(j => j.m !== mk); save(); render(true); }
-  else if (d.user) { STORE.current = d.user; P = STORE.profiles[d.user]; delArm = false; save(); render(true); toast('已切换到 ' + P.name); }
+  else if (d.user) { STORE.current = d.user; P = STORE.profiles[d.user]; delArm = false; ledgerArm = false; delTxn = null; save(); render(true); toast('已切换到 ' + P.name); }
   else if ('adduser' in d) { const id = 'p' + Date.now(); STORE.profiles[id] = newProfile('用户' + Object.keys(STORE.profiles).length); STORE.current = id; P = STORE.profiles[id]; save(); render(true); $('#pname')?.select(); toast('已添加新用户，先改个名字'); }
   else if ('delask' in d) { delArm = true; render(true); }
   else if ('delcancel' in d) { delArm = false; render(true); }
