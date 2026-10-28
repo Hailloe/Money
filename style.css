@@ -312,3 +312,4 @@ td .cellname .tag{flex:none}
 .icon-btn.sm{width:32px;height:32px;display:inline-grid;vertical-align:middle;margin-left:6px}
 @media (max-width:899px){.icon-btn.sm{width:44px;height:44px}}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
+.calrow{display:grid;gap:6px;justify-items:start}

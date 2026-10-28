@@ -900,6 +900,7 @@ function viewMe() {
       <label class="field">每月定投金额（元）<input type="number" inputmode="decimal" id="pref-monthly" value="${P.monthly || ''}"></label>
       <label class="field">每月几号定投<input type="number" inputmode="numeric" id="pref-day" min="1" max="28" value="${P.prefs.day || 10}"></label>
     </div>
+    <div class="calrow"><button class="btn ghost" type="button" data-cal>加到手机日历</button><span class="note">每月 ${P.prefs.day || 10} 号早上 9:30 提醒你定投，每年 1 月提醒一次年度体检。改了定投日要重新加一次（先在日历里删掉旧的）。</span></div>
     ${currentLevel().short ? '' : `<label class="field">海外比例（标普500 : 纳指100 = 7 : 3）<select id="pref-overseas">${[[0, `按风险档位（${currentLevel().level.target.overseas}%）`], [20, '20%'], [25, '25%（建议上限）']].map(([v, n]) => `<option value="${v}" ${(+P.prefs.overseasPct || 0) === v ? 'selected' : ''}>${n}</option>`).join('')}</select><span>海外最多占股票类的 40%，档位低时会自动按上限算，现在是 ${targets().overseas}%。</span></label>`}
     <label class="switch"><input type="checkbox" id="pref-noactive" ${P.prefs.noActive ? 'checked' : ''}><span>不买主动基金（全部用指数基金）</span></label>
     <div class="field"><span>不想碰的行业（名单外的基金名字里有这些字，会建议卖出）</span><div class="opts wrap">${C.avoidOptions.map(a => `<label class="opt"><input type="checkbox" data-avoid="${esc(a)}" ${avoid.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div></div>
@@ -933,6 +934,37 @@ function viewMe() {
 }
 let delArm = false, resetArm = false;
 
+/* ================= 定投日历提醒 =================
+ * 生成一个 .ics 日历文件：每月定投日 9:30 提醒，每年 1 月一次年度体检。手机日历打开就能添加，不需要账号。
+ */
+function icsText(day) {
+  const pad = n => String(n).padStart(2, '0'), now = new Date();
+  const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  // 从下一个定投日开始
+  let first = new Date(now.getFullYear(), now.getMonth(), day); if (first < new Date(now.getFullYear(), now.getMonth(), now.getDate())) first = new Date(now.getFullYear(), now.getMonth() + 1, day);
+  const ymd = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const url = location.href.split('#')[0];
+  const fold = line => { const out = []; let cur = ''; for (const ch of line) { if (new TextEncoder().encode(cur + ch).length > 73) { out.push(cur); cur = ' ' + ch; } else cur += ch; } out.push(cur); return out.join('\r\n'); };
+  const ev = (uid, start, rule, title, desc, link) => ['BEGIN:VEVENT', `UID:${uid}@money-dashboard`, `DTSTAMP:${stamp}`, `DTSTART;TZID=Asia/Shanghai:${start}T093000`, `DTEND;TZID=Asia/Shanghai:${start}T094500`, `RRULE:${rule}`,
+    `SUMMARY:${title}`, `DESCRIPTION:${desc.replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n')}`, `URL:${link}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'];
+  const nextJan = new Date(now.getFullYear() + (now.getMonth() === 0 && now.getDate() <= 15 ? 0 : 1), 0, 15);
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//money-dashboard//CN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:稳健基金',
+    'BEGIN:VTIMEZONE', 'TZID:Asia/Shanghai', 'BEGIN:STANDARD', 'DTSTART:19700101T000000', 'TZOFFSETFROM:+0800', 'TZOFFSETTO:+0800', 'TZNAME:CST', 'END:STANDARD', 'END:VTIMEZONE',
+    ...ev('monthly-invest', ymd(first), `FREQ=MONTHLY;BYMONTHDAY=${day}`, '定投日：打开稳健基金看板',
+      `今天是每月定投日。\n1. 打开看板，看“本月要做的事”和“本月定投计划”\n2. 在支付宝按计划买入\n3. 回到看板：按计划一键记账、更新持仓、本月打卡\n不看涨跌新闻，按计划执行就好。\n${url}#analysis`, url + '#analysis'),
+    ...ev('yearly-checkup', ymd(nextJan), 'FREQ=YEARLY', '年度体检：稳健基金看板',
+      `一年一次的检查，大约 15 分钟：\n1. 重新做一次风险测评（收入、用钱计划有没有变）\n2. 看推荐基金的经理有没有换、规模有没有明显缩水\n3. 看看年化收益进度，和余额宝比一比\n4. 导出一份备份\n${url}#me`, url + '#me'),
+    'END:VCALENDAR'];
+  return lines.map(fold).join('\r\n') + '\r\n';
+}
+function downloadCalendar() {
+  const day = Math.min(28, Math.max(1, +(P.prefs && P.prefs.day) || 10));
+  const blob = new Blob([icsText(day)], { type: 'text/calendar;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `money-invest-day${day}.ics`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('已生成日历文件。iPhone 上点“添加全部”；其他手机用日历 App 打开它');
+}
+
 /* ================= 年化收益进度 =================
  * 只记“进出整个账户的钱”：从银行卡转进支付宝（买基金或存余额宝）记“转入”，转回银行卡记“转出”。
  * 基金之间换、从余额宝买基金，都在账户内部，不用记。
@@ -959,7 +991,12 @@ function xirr(flows) {
 const dayNum = s => Math.floor(Date.parse(s + 'T00:00:00+08:00') / 86400000);
 const fullDate = s => { const m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[1]}年${+m[2]}月${+m[3]}日` : ''; };
 const pctN = (v, d = 1) => v == null || isNaN(v) ? '—' : Math.abs(v) < 0.5 * Math.pow(10, -d) ? (0).toFixed(d) + '%' : pct(v, d);
+const LS_CACHE = new WeakMap();   // 同一次刷新里看板和记账页都要用，只算一次
 function ledgerStats(A) {
+  if (LS_CACHE.has(A)) return LS_CACHE.get(A);
+  const r = ledgerStatsInner(A); LS_CACHE.set(A, r); return r;
+}
+function ledgerStatsInner(A) {
   const L = P.ledger; if (!L || !L.start) return null;
   const end = today(), days = dayNum(end) - dayNum(L.start);
   const txns = (L.txns || []).filter(t => t.d >= L.start && t.d <= end);
@@ -1250,7 +1287,7 @@ window.addEventListener('hashchange', () => { delArm = false; delTxn = null; led
 
 /* ================= 交互 ================= */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-cmp],[data-ff],[data-copy],[data-back],[data-del],[data-clear],#add-btn,[data-checkin],[data-uncheck],[data-user],[data-adduser],[data-delask],[data-delcancel],[data-deluser],[data-export],[data-import],[data-reset],[data-ai],[data-ledger]');
+  const t = e.target.closest('[data-cmp],[data-ff],[data-copy],[data-back],[data-del],[data-clear],#add-btn,[data-checkin],[data-uncheck],[data-user],[data-adduser],[data-delask],[data-delcancel],[data-deluser],[data-export],[data-import],[data-reset],[data-ai],[data-ledger],[data-cal]');
   if (!t) return;
   const d = t.dataset;
   if (d.cmp) { cmpCat = d.cmp; document.querySelectorAll('[data-cmp]').forEach(b => b.setAttribute('aria-pressed', b === t)); $('#cmp').innerHTML = compareTable(cmpCat); }
@@ -1278,6 +1315,7 @@ document.addEventListener('click', e => {
   else if ('deluser' in d) { delete STORE.profiles[STORE.current]; STORE.current = Object.keys(STORE.profiles)[0]; P = STORE.profiles[STORE.current]; delArm = false; save(); render(true); toast('已删除'); }
   else if (d.ai) aiAction(d.ai, t);
   else if (d.ledger) ledgerAction(d.ledger, t);
+  else if ('cal' in d) downloadCalendar();
   else if ('export' in d) exportBackup();
   else if ('reset' in d) { if (!resetArm) { resetArm = true; t.textContent = '再点一次，确认清空'; return; } STORE = { current: 'p1', profiles: { p1: newProfile('我') } }; P = STORE.profiles.p1; resetArm = false; save(); render(true); toast('已重置'); }
   else if ('import' in d) $('#import-file').click();
@@ -1319,7 +1357,7 @@ function bindMe() {
   $('#ai-key').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aiAction('savekey'); } });
   $('#pname').addEventListener('change', e => { P.name = e.target.value.trim().slice(0, 12) || '我'; save(); render(true); });
   $('#pref-monthly').addEventListener('change', e => { const v = Math.max(0, Number(e.target.value) || 0); P.monthly = v; save(); toast('已保存'); });
-  $('#pref-day').addEventListener('change', e => { const v = Math.min(28, Math.max(1, Math.round(Number(e.target.value) || 10))); P.prefs.day = v; e.target.value = v; save(); toast('已保存'); });
+  $('#pref-day').addEventListener('change', e => { const v = Math.min(28, Math.max(1, Math.round(Number(e.target.value) || 10))); const old = P.prefs.day; P.prefs.day = v; e.target.value = v; save(); render(true); toast(old !== v ? '已保存。如果之前加过日历提醒，记得重新加一次' : '已保存'); });
   $('#pref-overseas') && $('#pref-overseas').addEventListener('change', e => { P.prefs.overseasPct = +e.target.value || 0; save(); render(true); toast('已调整海外比例'); });
   $('#pref-noactive').addEventListener('change', e => { P.prefs.noActive = e.target.checked; save(); render(true); });
   document.querySelectorAll('[data-avoid]').forEach(cb => cb.addEventListener('change', () => { P.prefs.avoid = [...document.querySelectorAll('[data-avoid]:checked')].map(x => x.dataset.avoid); save(); }));
@@ -1350,7 +1388,7 @@ function exportBackup() {
   const txt = JSON.stringify(Object.assign({ app: 'money', exportedAt: new Date().toISOString() }, STORE), null, 1);
   try {
     const blob = new Blob([txt], { type: 'application/json' }), a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = `基金看板备份-${today()}.json`; document.body.appendChild(a); a.click(); a.remove();
+    a.href = URL.createObjectURL(blob); a.download = `money-backup-${today()}.json`; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('已导出。iPhone 上会存到“文件”App');
   } catch (e) { const ta = $('#backup-text'); ta.hidden = false; ta.value = txt; ta.select(); toast('下载不了，内容已显示在下面，可以全选复制'); }
 }
