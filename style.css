@@ -302,3 +302,4 @@ td .cellname .tag{flex:none}
 .calm .sub{display:block;margin-top:4px}
 .warnbox{background:var(--warn-soft)}
 @media (max-width:899px){.pickfrom summary{min-height:44px}}
+.btn[hidden]{display:none}

@@ -56,7 +56,8 @@ function cleanProfile(p, fallbackName) {
   const r = p.risk;
   out.risk = r && typeof r === 'object' && Array.isArray(r.ans) && r.ans.length === C.quiz.length && r.ans.every(a => Number.isInteger(a) && a >= 0 && a <= 3)
     ? (q => q && { ans: r.ans, score: q.score, k: q.k, at: typeof r.at === 'string' ? r.at : '' })(quizLevel(r.ans)) : null;
-  out.aiReport = p.aiReport && typeof p.aiReport.text === 'string' && typeof p.aiReport.at === 'string' ? { text: p.aiReport.text.slice(0, 8000), at: p.aiReport.at, model: String(p.aiReport.model || ''), example: !!p.aiReport.example, fp: typeof p.aiReport.fp === 'string' ? p.aiReport.fp : '' } : null;
+  out.aiFail = typeof p.aiFail === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.aiFail) ? p.aiFail : '';
+  out.aiReport = p.aiReport && typeof p.aiReport.text === 'string' && typeof p.aiReport.at === 'string' ? { text: p.aiReport.text.slice(0, 8000), at: p.aiReport.at, model: String(p.aiReport.model || ''), example: !!p.aiReport.example, fp: typeof p.aiReport.fp === 'string' ? p.aiReport.fp : '', day: typeof p.aiReport.day === 'string' ? p.aiReport.day : '' } : null;
   out.sellPlans = {};
   if (p.sellPlans && typeof p.sellPlans === 'object') Object.entries(p.sellPlans).forEach(([k, v]) => { if (v && /^\d{4}-\d{2}$/.test(v.start)) out.sellPlans[k] = { start: v.start }; });
   return out;
@@ -974,7 +975,10 @@ async function callAI(messages, onText, signal) {
   if (!res.ok) { let msg = ''; try { msg = (await res.json()).error.message; } catch (e) { /* 没有错误详情 */ } throw { code: res.status, msg }; }
   const reader = res.body.getReader(), dec = new TextDecoder(); let buf = '', text = '', thinking = '';
   for (;;) {
-    const { value, done } = await reader.read(); if (done) break;
+    let chunk;
+    try { chunk = await reader.read(); }
+    catch (e) { throw { code: e && e.name === 'AbortError' ? 'abort' : 'network', partial: text }; }
+    const { value, done } = chunk; if (done) break;
     buf += dec.decode(value, { stream: true });
     const lines = buf.split('\n'); buf = lines.pop();
     for (const line of lines) {
@@ -988,12 +992,13 @@ async function callAI(messages, onText, signal) {
 function aiError(e) {
   if (!e) return 'AI 调用失败。';
   if (e.code === 'nokey') return '还没填 DeepSeek API key。到“我的 → AI 助手”里填写。';
-  if (e.code === 'network') return '连不上 DeepSeek：可能是网络问题，或者浏览器拦截了请求。稍后再试；一直不行就告诉维护的人。';
+  if (e.code === 'network' && !e.partial) return '连不上 DeepSeek：可能是网络问题，或者浏览器拦截了请求。稍后再试；一直连不上，可以先把“自动解读”关掉，免得每次打开都白试一次。';
   if (e.code === 401) return 'API key 不对或已失效。到 DeepSeek 开放平台重新生成一个，再填到“我的 → AI 助手”。';
   if (e.code === 402) return 'DeepSeek 账户余额不足，充值后再试。';
   if (e.code === 429) return '请求太频繁，等一分钟再试。';
-  if (e.code === 'abort') return '已停止。';
-  return `AI 调用失败（${esc(e.code)}${e.msg ? '：' + esc(e.msg) : ''}）。`;
+  if (e.code === 'abort') return e.partial ? '（已停止，上面是停止前生成的部分）' : '已停止。';
+  if (e.code === 'network' && e.partial) return '（网络中断，上面是中断前生成的部分）';
+  return typeof e.code === 'number' ? `AI 调用失败（错误码 ${e.code}${e.msg ? '：' + esc(e.msg) : ''}）。` : 'AI 调用失败，请稍后再试。';
 }
 /* 把 AI 的回答转成简单排版：加粗、分点、换行。先转义，防止插入网页代码 */
 function mdLite(t) {
@@ -1020,8 +1025,11 @@ async function runAI(kind, opts) {
       box.innerHTML = t ? mdLite(t) : `<p class="note">AI 正在思考…${th ? `（已想了 ${th.length} 字）` : ''}</p>`;
     }, ctl.signal);
     box.innerHTML = mdLite(text) + `<p class="note">AI 生成，仅供参考；具体操作以上面的规则建议为准。${esc(AIS.model)} · ${new Date().toLocaleString('zh-CN', { hour12: false })}</p>`;
-    if (kind === 'review') { P.aiReport = { at: new Date().toISOString(), text, model: AIS.model, example: !!P.example, fp: adviceFingerprint(A) }; save(); if (opts.silent) { toast('AI 已更新持仓解读'); if ((location.hash || '#home') === '#home') render(true); } }
-  } catch (e) { box.innerHTML = `<p class="note err">${aiError(e)}</p>`; if (opts.silent) P.aiFail = today(); }
+    if (kind === 'review') { P.aiReport = { at: new Date().toISOString(), day: today(), text, model: AIS.model, example: !!P.example, fp: adviceFingerprint(A) }; save(); if (opts.silent) { toast('AI 已更新持仓解读'); if ((location.hash || '#home') === '#home') render(true); } }
+  } catch (e) {
+    box.innerHTML = (e && e.partial ? mdLite(e.partial) : '') + `<p class="note err">${aiError(e)}</p>`;
+    if (opts.silent && !(e && e.code === 'abort')) { P.aiFail = today(); save(); }
+  }
   finally { if (aiBusy === ctl) aiBusy = null; if (stopBtn) stopBtn.hidden = true; }
 }
 /* 按变化触发：只有你的操作建议变了（比如某只从“持有”变成“止盈”），或者到了每月定投日，才让 AI 重新解读 */
@@ -1030,7 +1038,7 @@ function aiDue() {
   if (!AIS.key || AIS.auto === 'off' || P.example) return false;
   const r = P.aiReport; if (!r || !r.at || r.example) return true;
   if (r.fp !== adviceFingerprint(analyze())) return true;
-  return daysToInvest().n === 0 && r.at.slice(0, 10) !== today();
+  return daysToInvest().n === 0 && (r.day || '') !== today();
 }
 function aiReportHTML(r) {
   if (!r) return '';
@@ -1096,7 +1104,7 @@ function renderInner(force) {
   if (tab === 'analysis' && $('#ai-q')) $('#ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aiAction('ask'); } });
   if (tab === 'me') bindMe();
 }
-window.addEventListener('hashchange', () => { delArm = false; render(); });
+window.addEventListener('hashchange', () => { delArm = false; if (aiBusy) aiBusy.abort(); render(); });
 
 /* ================= 交互 ================= */
 document.addEventListener('click', e => {

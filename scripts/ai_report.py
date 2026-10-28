@@ -93,7 +93,7 @@ def snapshot(data, prev=None):
     pe, spread, cap, stale, picks = parse_rules()
     psig = (prev or {}).get('sig', {})
     m = data.get('market', {})
-    g = lambda k, f: (m.get(k) or {}).get(f)
+    g = lambda k, f: (m.get(k) if isinstance(m.get(k), dict) else {}).get(f)
     sig = {}
     for key, name in (('hs300', '沪深300'), ('sp500', '标普500'), ('ndx', '纳指100')):
         v = g(key, 'pePct10y')
@@ -124,10 +124,17 @@ def snapshot(data, prev=None):
         if cat not in DD_RULES or len(cur) < 10:
             continue
         last = cur[-1]
+        cur = [p for p in cur if isinstance(p, list) and len(p) == 2 and isinstance(p[1], (int, float)) and p[1] > 0]
+        if len(cur) < 10:
+            continue
+        last = cur[-1]
         year = [v for d, v in cur if d >= (datetime.date.fromisoformat(last[0]) - datetime.timedelta(days=365)).isoformat()]
         hi = max(year) if year else None
         if hi:
             dd[code] = {'name': short, 'cat': cat, 'dd': round((last[1] / hi - 1) * 100, 1)}
+    # 这次没抓到的信号沿用上次的状态，避免数据恢复时漏报中间的变化
+    for k, v in psig.items():
+        sig.setdefault(k, v)
     navs = sorted(f.get('navDate') for c, cat, s in picks if (f := funds.get(c)) and cat != 'cash' and f.get('navDate'))
     nav_mid = navs[(len(navs) - 1) // 2] if navs else None
     stale_days = (NOW.date() - datetime.date.fromisoformat(nav_mid)).days if nav_mid else None
@@ -228,8 +235,10 @@ def main():
             del report['history'][KEEP:]
             print('发出提醒：', [t for _, t in changes])
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, 'w', encoding='utf-8') as f:
+    tmp = OUT + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, OUT)
     return 0
 
 

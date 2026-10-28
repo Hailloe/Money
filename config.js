@@ -41,7 +41,7 @@ window.CONFIG = {
     takeProfitSlice: 0.1,  // 每月卖出 10%
     swapScoreGap: 8,       // 同类评分比推荐基金低 8 分以上，建议换
     sellMonths: 3,         // 卖出（名单外基金、换基、减仓）都分 3 个月做完
-    staleDays: 4           // 最新净值超过 4 天没更新，页面顶部提示数据可能过期
+    staleDays: 10          // 净值超过 10 天没更新才提示数据可能过期（国庆、春节长假会休市 9 天左右）
   },
 
   /*
