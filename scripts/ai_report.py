@@ -155,13 +155,14 @@ def diff(prev, cur):
             continue
         if p['t'] != s['t']:
             extra = f"（近10年 {int(s['pct'] + 0.5)}% 分位）" if k != 'divLowVol' and s.get('pct') is not None else (f"（息差 {s['spread']} 个百分点）" if k == 'divLowVol' else '')
-            out.append(('tier', f"{s['name']}估值从“{p['t']}”变成“{s['t']}”{extra}，每月买入倍数从 {p['m']:g} 倍变为 {s['m']:g} 倍"))
+            mult = f"，每月买入倍数从 {p['m']:g} 倍变为 {s['m']:g} 倍" if p['m'] != s['m'] else '，买入倍数不变'
+            out.append(('tier', f"{s['name']}估值从“{p['t']}”变成“{s['t']}”{extra}{mult}"))
         elif k == 'divLowVol' and p.get('conflict') != s.get('conflict'):
             out.append(('tier', f"红利低波自身估值分位{'升到' if s['conflict'] else '回落到'} {int((s['pct'] or 0) + 0.5)}%，和息差信号{'打架，买入倍数从 ' + format(p['m'], 'g') + ' 倍降到 1 倍' if s['conflict'] else '不再打架，按息差恢复到 ' + format(s['m'], 'g') + ' 倍'}"))
     alerted = prev.get('ddAlerted', {})
     for code, d in cur['dd'].items():
         if dd_due(d, alerted.get(code)):
-            out.append(('dd', f"{d['name']}从近一年最高点下跌了 {abs(d['dd'])}%"))
+            out.append(('ddbond' if d.get('cat') == 'bond' else 'dd', f"{d['name']}从近一年最高点下跌了 {abs(d['dd'])}%"))
     if cur['stale'] and not prev.get('stale'):
         out.append(('stale', f"基金净值已经 {cur['staleDays']} 天没有更新，数据可能不准"))
     return out
@@ -170,13 +171,14 @@ def diff(prev, cur):
 ENDINGS = {
     'stale': '数据可能不准，先别按页面建议操作，等数据恢复。',
     'tier': '每月买入金额已按规则自动调整，照“本月定投计划”执行即可，不需要额外操作。',
-    'dd': '这是正常波动，规则不变，照常定投，不用卖。'
+    'dd': '这是正常波动，规则不变，照常定投，不用卖。',
+    'ddbond': '债券基金很少跌这么多，先到天天基金看看这只基金有没有关于信用风险的公告，暂时不用卖。'
 }
 
 
 def rules_text(changes):
     kinds = [k for k, _ in changes]
-    end = next(ENDINGS[k] for k in ('stale', 'tier', 'dd') if k in kinds)
+    end = ' '.join(ENDINGS[k] for k in ('stale', 'ddbond', 'tier', 'dd') if k in kinds and not (k == 'dd' and 'stale' in kinds))
     return '；'.join(t for _, t in changes) + '。' + end
 
 

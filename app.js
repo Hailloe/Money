@@ -505,8 +505,9 @@ function dataDate() {
 function dataAge() {
   const nd = dataDate(); const d = nd ? Date.parse(nd + 'T15:00:00+08:00') : NaN;
   if (isNaN(d)) return '<div class="banner warn"><span>没有读到基金净值或估值数据。操作前请在天天基金或支付宝核对。</span></div>';
-  const days = Math.floor((Date.now() - d) / 86400000);
-  return days > C.rules.staleDays ? `<div class="banner warn"><span>净值和估值数据停在 ${cnDate(nd)}，已经 ${days} 天没更新，自动更新可能出了问题。操作前请在天天基金核对。</span></div>` : '';
+  // 按工作日算：周末不算，避免周一早上误报；国庆、春节最多 5 个工作日
+  let wd = 0; for (let t = new Date(d); t.setDate(t.getDate() + 1) && t <= new Date();) { const k = t.getDay(); if (k !== 0 && k !== 6) wd++; }
+  return wd > (C.rules.staleWeekdays || 5) ? `<div class="banner warn"><span>净值和估值数据停在 ${cnDate(nd)}，已经 ${wd} 个工作日没更新。如果不是长假，可能是自动更新出了问题，操作前请在天天基金核对。</span></div>` : '';
 }
 function planNote(A) {
   const out = [];
