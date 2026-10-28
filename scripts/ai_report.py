@@ -154,10 +154,10 @@ def diff(prev, cur):
         if not p:
             continue
         if p['t'] != s['t']:
-            extra = f"（近10年 {round(s['pct'])}% 分位）" if k != 'divLowVol' and s.get('pct') is not None else (f"（息差 {s['spread']} 个百分点）" if k == 'divLowVol' else '')
+            extra = f"（近10年 {int(s['pct'] + 0.5)}% 分位）" if k != 'divLowVol' and s.get('pct') is not None else (f"（息差 {s['spread']} 个百分点）" if k == 'divLowVol' else '')
             out.append(('tier', f"{s['name']}估值从“{p['t']}”变成“{s['t']}”{extra}，每月买入倍数从 {p['m']:g} 倍变为 {s['m']:g} 倍"))
         elif k == 'divLowVol' and p.get('conflict') != s.get('conflict'):
-            out.append(('tier', f"红利低波自身估值分位{'升到' if s['conflict'] else '回落到'} {round(s['pct'] or 0)}%，和息差信号{'打架，买入倍数从 ' + format(p['m'], 'g') + ' 倍降到 1 倍' if s['conflict'] else '不再打架，按息差恢复到 ' + format(s['m'], 'g') + ' 倍'}"))
+            out.append(('tier', f"红利低波自身估值分位{'升到' if s['conflict'] else '回落到'} {int((s['pct'] or 0) + 0.5)}%，和息差信号{'打架，买入倍数从 ' + format(p['m'], 'g') + ' 倍降到 1 倍' if s['conflict'] else '不再打架，按息差恢复到 ' + format(s['m'], 'g') + ' 倍'}"))
     alerted = prev.get('ddAlerted', {})
     for code, d in cur['dd'].items():
         if dd_due(d, alerted.get(code)):
