@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-28 19:55",
+ "updated": "2026-10-28 19:59",
  "market": {
   "bondNote": "2026 年长端利率上行，接近一半的中长期纯债基金今年没有赚到钱，所以债券部分以短久期为主。",
   "hs300": {
@@ -92,7 +92,12 @@
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
   "hs300HistSrc": "联接基金净值",
-  "divLowVolHistSrc": "联接基金净值"
+  "divLowVolHistSrc": "联接基金净值",
+  "ust10y": {
+   "yield": 4.99,
+   "date": "2026-10-27",
+   "src": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"
+  }
  },
  "funds": [
   {
@@ -4579,7 +4584,7 @@
   "valuationCodes": "935600,CSI716567,CSI930652,CSI930740,CSI930782,CSI931079,CSI931087,CSI931142,CSI931157,CSIH11136,CSIH30094,CSIH30269,CSIH30533,CSPSADRP,GDAXI,HKHSCEI,HKHSI,HKHSSCNE,HKHSTECH,HSFML25,NDX,SH000010,SH000015,SH000016,SH000170,SH000300,SH000688,SH000827,SH000852,SH000903,SH000905,SH000919,SH000922,SH000925,SH000932,SH000978,SH000989,SH000991,SH000993,SP500,SPACEVCP,SPCQVCP,SPHCMSHP,SZ399001,SZ399006,SZ399317,SZ399324,SZ399330,SZ399393,SZ399396,SZ399417,SZ399550,SZ399610,SZ399701,SZ399702,SZ399812,SZ399967,SZ399971,SZ399975,SZ399986,SZ399989,SZ399997,SZ399998",
   "valuation": "ok",
   "cgb10y": "ok",
-  "ust10y": "failed: The read operation timed out",
+  "ust10y": "ok",
   "hs300Hist": "failed (用联接基金代替): Remote end closed connection without response",
   "divLowVolHist": "failed (用联接基金代替): Remote end closed connection without response"
  }
