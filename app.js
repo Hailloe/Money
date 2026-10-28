@@ -1008,12 +1008,17 @@ function calmFund(x, A) {
   if (ongoing && done.length && ongoing.deepest < Math.min(...done.map(e => e.deepest))) hist += ' <b>这次已经比它过去任何一次都跌得深，风险是真实的；正因为这样，更要按比例分批，不要加码，也不要一次卖光。</b>';
   const short = currentLevel().short, a = x.adv;
   let todo;
+  const ruleSells = x.held && a && (a.k === 'sell' || a.k === 'swap');
   if (!x.held) todo = [`你还没买，按定投计划买就行${sigOf(f.cat, f).m === 0 ? '（现在估值贵，计划里暂时不买）' : ''}。`];
+  else if (ruleSells) {
+    todo = [`<b>该做的：</b>按“本月要做的事”${/分批/.test(a.t) ? esc(a.t) : '分批' + esc(a.t)}。这是配置或规则的原因，不是因为下跌，也不是恐慌卖出；分 ${C.rules.sellMonths} 个月做完，不一次卖光。`, '<b>不该做的：</b>因为害怕而一次性全卖、停掉其他基金的定投、每天看好几次。'];
+    if (f.cat === 'bond') todo.push('另外，债券基金很少跌这么多，可能是持有的债券出了问题（信用风险）。去基金详情看看最新公告和经理有没有变化。');
+  }
   else if (f.cat === 'bond') todo = ['债券基金很少跌这么多，可能是持有的债券出了问题（信用风险），这和股票基金的正常波动不一样。', '这个月先暂停加仓，去基金详情看最新公告和经理有没有变化；拿不准就先不动，等下个月数据。不要一次性全卖。'];
-  else if (a && ['sell', 'swap', 'stop'].includes(a.k)) todo = [`<b>该做的：</b>按“本月要做的事”${a.k === 'stop' ? '暂停买入、拿着不动' : `分批${esc(a.t)}`}。${a.k === 'stop' ? '这是因为估值，不是因为下跌。' : `这是配置或规则的原因，不是因为下跌，也不是恐慌卖出；分 ${C.rules.sellMonths} 个月做完，不一次卖光。`}`, '<b>不该做的：</b>因为害怕一次性全卖、停掉其他基金的定投、每天看好几次。'];
+  else if (a && a.k === 'stop') todo = ['<b>该做的：</b>按“本月要做的事”暂停买入、拿着不动。这是因为估值，不是因为下跌。', '<b>不该做的：</b>因为害怕而卖出、停掉其他基金的定投、每天看好几次。'];
   else { const sig = sigOf(f.cat, f); todo = [`<b>该做的：</b>按“本月定投计划”照常买。${sig.m > 1 ? `现在估值${sig.t}，规则已经让你多买（${sig.m} 倍），跌下来的时候买到的份额更多。` : '规则会根据估值自动调整买多少，不用自己加减。'}`, '<b>不该做的：</b>割肉卖出、停止定投、每天打开看好几次。在低点卖掉，等于把账面亏损变成真亏。'];
     if (!short) todo.push('<b>可以做的：</b>关掉 App，下个定投日再打开。想清楚这笔钱 3 年内不用，就不必理会这段下跌。'); }
-  return { hist, todo, ongoing };
+  return { hist, todo, ongoing, ruleSells };
 }
 function calmCard(A, compact) {
   const al = calmAlerts(A), heldAl = al.filter(x => x.held);
@@ -1033,7 +1038,7 @@ function calmCard(A, compact) {
       <a class="row" href="#fund-${x.f.code}"><div class="t">${dot(x.f.cat)}<span class="ell">${esc(x.f.short || x.f.name)}</span>${x.held ? '' : '<span class="tag">未持有</span>'}</div><div class="r n down strong">−${Math.abs(x.cur.dd).toFixed(1)}%</div><div class="s">从近一年最高点算，截至 ${fullDate(x.cur.date)}（提醒线 ${DD_LINE[x.f.cat]}%）</div></a>
       <p class="note">${cf.hist}</p>
       <ul class="calm-list">${cf.todo.map(t => `<li>${t}</li>`).join('')}</ul></div>`; }).join('')}
-    <p class="note">真正决定结果的，是你能不能在下跌时继续按计划执行、不在低点卖出。</p>
+    <p class="note">${al.some(x => calmFund(x, A).ruleSells) ? '按规则分批卖这一部分没问题；要避免的是因为害怕把剩下的也一次卖光。' : '真正决定结果的，是你能不能在下跌时继续按计划执行、不在低点卖出。'}</p>
     ${firstHeld ? `<button class="btn ghost" type="button" data-calm="want" data-code="${firstHeld.f.code}">我很想卖掉</button><div id="calm-check" hidden></div>` : ''}
   </section>`;
 }
@@ -1041,8 +1046,8 @@ function calmChecklist(A, code) {
   const it = A.items.find(i => i.code === code); if (!it) return '';
   const name = esc(it.fund ? it.fund.short || it.fund.name : it.name), loss = Math.min(0, it.profit);
   const adv = (A.advice.find(x => x.code === code) || {}).adv;
-  const ruleSell = adv && (adv.k === 'sell' || adv.k === 'swap') && adv.amt ? `<p class="calm-rule">规则这个月本来就让你${esc(adv.t)} ${fmt(adv.amt)}，按那个分批做就好。下面说的是在这之外再多卖。</p>` : '';
-  const q1 = it.cat === 'bond' ? '这笔钱 3 年内要用吗？债券基金本来就是放稳钱的地方，短期波动一般不大；要用的话按需分批取，不用一次全卖。'
+  const ruleSell = adv && (adv.k === 'sell' || adv.k === 'swap') && adv.amt ? `<p class="calm-rule">规则这个月本来就让你${esc(adv.t)} ${fmt(adv.amt)}，照做没问题；下面的问题是给“想全部卖掉”的时候用的。</p>` : '';
+  const q1 = it.cat === 'bond' ? '这笔钱 3 年内要用吗？债券基金本来就是放稳钱的地方，短期波动一般不大；要用的话，到“我的 → 风险测评”重做，系统会调整配置，按需分批取，不用一次全卖。'
     : `这笔钱 3 年内要用吗？不用的话，现在的下跌和你没有关系；要用的话，这笔钱本就不该放在股票基金里：到“我的 → 风险测评”重做，系统会分 ${C.rules.sellMonths} 个月转到债券和余额宝。`;
   return `<div class="checklist">
     ${ruleSell}<p><b>卖掉${name}之前，先回答 3 个问题：</b></p>
