@@ -1,5 +1,5 @@
 {
- "checked": "2026-10-28 22:21",
+ "checked": "2026-10-28 23:25",
  "history": [],
  "state": {
   "sig": {
@@ -27,40 +27,49 @@
     "name": "红利低波",
     "spread": 2.99,
     "pct": 80.2,
-    "conflict": true
+    "conflict": true,
+    "base_m": 1.5
    }
   },
   "dd": {
    "007901": {
     "name": "汇添富中短债A",
+    "cat": "bond",
     "dd": 0.0
    },
    "217022": {
     "name": "招商产业债A",
+    "cat": "bond",
     "dd": 0.0
    },
    "460300": {
     "name": "沪深300联接A",
+    "cat": "index",
     "dd": -8.7
    },
    "007466": {
     "name": "红利低波联接A",
+    "cat": "div",
     "dd": -1.0
    },
    "050025": {
     "name": "博时标普500联接A",
+    "cat": "overseas",
     "dd": -1.5
    },
    "270042": {
     "name": "广发纳指100联接A",
+    "cat": "overseas",
     "dd": -4.5
    },
    "163406": {
     "name": "兴全合润",
+    "cat": "active",
     "dd": -31.3
    },
    "161005": {
     "name": "富国天惠",
+    "cat": "active",
     "dd": -10.5
    }
   },
