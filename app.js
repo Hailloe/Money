@@ -60,8 +60,8 @@ function cleanProfile(p, fallbackName) {
   out.aiReport = p.aiReport && typeof p.aiReport.text === 'string' && typeof p.aiReport.at === 'string' ? { text: p.aiReport.text.slice(0, 8000), at: p.aiReport.at, model: String(p.aiReport.model || ''), example: !!p.aiReport.example, fp: typeof p.aiReport.fp === 'string' ? p.aiReport.fp : '', day: typeof p.aiReport.day === 'string' ? p.aiReport.day : '' } : null;
   const lg = p.ledger;
   out.ledger = lg && typeof lg === 'object' && /^\d{4}-\d{2}-\d{2}$/.test(lg.start) && isFinite(+lg.startValue) && +lg.startValue >= 0
-    ? { start: lg.start, startValue: +lg.startValue, txns: (Array.isArray(lg.txns) ? lg.txns : []).filter(t => t && /^\d{4}-\d{2}-\d{2}$/.test(t.d) && (t.type === 'buy' || t.type === 'sell') && +t.amt > 0 && typeof t.code === 'string')
-        .map((t, i) => ({ id: typeof t.id === 'string' ? t.id.slice(0, 40) : 'imp' + i, d: t.d, code: t.code.slice(0, 40), name: typeof t.name === 'string' ? t.name.slice(0, 40) : t.code, type: t.type, amt: Math.round(+t.amt * 100) / 100, plan: typeof t.plan === 'string' ? t.plan : undefined })).slice(-2000) }
+    ? { start: lg.start, startValue: +lg.startValue, txns: (Array.isArray(lg.txns) ? lg.txns : []).filter(t => t && /^\d{4}-\d{2}-\d{2}$/.test(t.d) && ['in', 'out', 'buy', 'sell'].includes(t.type) && +t.amt > 0 && +t.amt <= 1e9)
+        .map((t, i) => ({ id: typeof t.id === 'string' ? t.id.slice(0, 40) : 'imp' + i, d: t.d, type: t.type === 'buy' ? 'in' : t.type === 'sell' ? 'out' : t.type, amt: Math.round(+t.amt * 100) / 100, plan: typeof t.plan === 'string' ? t.plan : undefined })).slice(-2000) }
     : null;
   out.sellPlans = {};
   if (p.sellPlans && typeof p.sellPlans === 'object') Object.entries(p.sellPlans).forEach(([k, v]) => { if (v && /^\d{4}-\d{2}$/.test(v.start)) out.sellPlans[k] = { start: v.start }; });
@@ -933,9 +933,10 @@ function viewMe() {
 let delArm = false, resetArm = false;
 
 /* ================= 年化收益进度 =================
- * P.ledger = { start: 'YYYY-MM-DD', startValue: 起点那天的总资产, txns: [{ id, d, code, name, type: 'buy'|'sell', amt }] }
- * 年化用资金加权收益率（XIRR）：起点资产和每笔买入算投入，每笔卖出和今天的总资产算收回。
- * 这样每月分批定投也能算出真实年化，不会因为钱是陆续投进去的而算错。
+ * 只记“进出整个账户的钱”：从银行卡转进支付宝（买基金或存余额宝）记“转入”，转回银行卡记“转出”。
+ * 基金之间换、从余额宝买基金，都在账户内部，不用记。
+ * P.ledger = { start: 'YYYY-MM-DD', startValue: 起点那天的总资产, txns: [{ id, d, type: 'in'|'out', amt, plan? }] }
+ * 年化用资金加权收益率（XIRR）：起点资产和每笔转入算投入，每笔转出和今天的总资产算收回。
  */
 const GOAL = { lo: 5, hi: 10 };   // 你的目标：年化 5%–10%
 function xirr(flows) {
@@ -943,102 +944,115 @@ function xirr(flows) {
   if (!flows.some(f => f.v < 0) || !flows.some(f => f.v > 0)) return null;
   const npv = r => flows.reduce((a, f) => a + f.v / Math.pow(1 + r, f.t), 0);
   let lo = -0.99, hi = 10, fl = npv(lo), fh = npv(hi);
-  if (fl * fh > 0) return null;
+  if (!isFinite(fl) || !isFinite(fh) || fl * fh > 0) return null;
   for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2, fm = npv(mid); if (Math.abs(fm) < 1e-7) return mid; if (fl * fm < 0) { hi = mid; fh = fm; } else { lo = mid; fl = fm; } }
   return (lo + hi) / 2;
 }
 const dayNum = s => Math.floor(Date.parse(s + 'T00:00:00+08:00') / 86400000);
+const fullDate = s => { const m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[1]}年${+m[2]}月${+m[3]}日` : ''; };
+const pctN = (v, d = 1) => v == null || isNaN(v) ? '—' : Math.abs(v) < 0.5 * Math.pow(10, -d) ? (0).toFixed(d) + '%' : pct(v, d);
 function ledgerStats(A) {
   const L = P.ledger; if (!L || !L.start) return null;
   const end = today(), days = dayNum(end) - dayNum(L.start);
   const txns = (L.txns || []).filter(t => t.d >= L.start && t.d <= end);
-  const buys = txns.filter(t => t.type === 'buy').reduce((a, t) => a + t.amt, 0);
-  const sells = txns.filter(t => t.type === 'sell').reduce((a, t) => a + t.amt, 0);
-  const invested = L.startValue + buys - sells;            // 净投入
-  const gain = A.total - invested;                         // 记账以来赚了多少
-  const flows = [{ t: 0, v: -L.startValue }].concat(txns.map(t => ({ t: (dayNum(t.d) - dayNum(L.start)) / 365, v: t.type === 'buy' ? -t.amt : t.amt })), [{ t: days / 365, v: A.total }]);
+  const ins = txns.filter(t => t.type === 'in').reduce((a, t) => a + t.amt, 0);
+  const outs = txns.filter(t => t.type === 'out').reduce((a, t) => a + t.amt, 0);
+  const invested = L.startValue + ins - outs;            // 净投入
+  const gain = A.total - invested;
+  const flows = [{ t: 0, v: -L.startValue }].concat(txns.map(t => ({ t: (dayNum(t.d) - dayNum(L.start)) / 365, v: t.type === 'in' ? -t.amt : t.amt })), [{ t: days / 365, v: A.total }]);
   const r = days >= 90 ? xirr(flows) : null;
-  return { L, days, buys, sells, invested, gain, gainPct: invested > 0 ? gain / invested * 100 : null, irr: r == null ? null : r * 100, txns };
+  // 同期如果全放余额宝：每笔钱按余额宝收益率复利到今天
+  const cashRate = (CAT.cash && CAT.cash.ret || 1.3) / 100;
+  const cashVal = flows.slice(0, -1).reduce((a, f) => a - f.v * Math.pow(1 + cashRate, days / 365 - f.t), 0);
+  return { L, days, ins, outs, invested, gain, gainPct: invested > 0 ? gain / invested * 100 : null, irr: r == null ? null : r * 100, txns, cashVal };
 }
 function goalGauge(v) {
-  // 0%–15% 的刻度，5%–10% 是目标区
   const pos = x => Math.max(0, Math.min(100, x / 15 * 100));
   return `<div class="goal" role="img" aria-label="年化 ${v == null ? '未知' : v.toFixed(1) + '%'}，目标 5% 到 10%">
     <div class="goaltrack"><span class="band" style="left:${pos(GOAL.lo)}%;width:${pos(GOAL.hi) - pos(GOAL.lo)}%"></span>${v != null ? `<i class="gmark" style="left:${pos(v)}%"></i>` : ''}</div>
     <div class="glabels"><span>0%</span><span>绿色区域是目标 5%–10%</span><span>15%+</span></div></div>`;
 }
-function futureTable(monthly, start) {
-  const yrs = [5, 10], rates = [5, 7.5, 10];
+function futureTable(monthly, start, exp) {
+  const yrs = [5, 10];
   const fv = (r, y) => { const m = r / 100 / 12, n = y * 12; return start * Math.pow(1 + m, n) + (m ? monthly * (Math.pow(1 + m, n) - 1) / m : monthly * n); };
-  return `<div class="tbox"><table><thead><tr><th>年化</th>${yrs.map(y => `<th class="r">${y} 年后</th>`).join('')}</tr></thead><tbody>
-    ${rates.map(r => `<tr><td>${r}%</td>${yrs.map(y => `<td class="r">${fmt(Math.round(fv(r, y) / 100) * 100)}</td>`).join('')}</tr>`).join('')}
+  const rows = [['不顺的十年（2%）', 2], [`你的配置估算（${exp.toFixed(1)}%）`, exp], ['目标下沿（5%）', 5]];
+  return `<div class="tbox"><table><thead><tr><th>假设年化</th>${yrs.map(y => `<th class="r">${y} 年后</th>`).join('')}</tr></thead><tbody>
+    ${rows.map(([n, r]) => `<tr><td>${n}</td>${yrs.map(y => `<td class="r">${fmt(Math.round(fv(r, y) / 100) * 100)}</td>`).join('')}</tr>`).join('')}
     <tr><td class="muted">只存不投</td>${yrs.map(y => `<td class="r muted">${fmt(start + monthly * y * 12)}</td>`).join('')}</tr></tbody></table></div>`;
 }
 function goalCard(A) {
-  const st = ledgerStats(A), lv = currentLevel();
-  const exp = A.expRet;
-  const expNote = lv.short ? '你选了“1 年内要用”，这笔钱只放债券和余额宝，长期估算约 ' + exp.toFixed(1) + '%，达不到 5% 是正常的：短期要用的钱，安全比收益重要。'
+  const st = ledgerStats(A), lv = currentLevel(), exp = A.expRet;
+  const expNote = lv.short ? `你选了“1 年内要用”，这笔钱只放债券和余额宝，长期估算约 ${exp.toFixed(1)}%，达不到 5% 是正常的：短期要用的钱，安全比收益重要。`
     : exp < GOAL.lo ? `按你现在的“${lv.level.n}”配置，长期估算年化约 ${exp.toFixed(1)}%，低于 5% 的目标。想提高就要多配股票类基金，大跌时的浮亏也会比现在的约 ${Math.round(A.expDd)}% 更大。能接受的话，可以重新做风险测评。`
+    : exp < GOAL.lo + 0.5 ? `按你现在的“${lv.level.n}”配置，长期估算年化约 ${exp.toFixed(1)}%，刚好在目标下沿，不顺的年份会低于 5%。大跌时可能浮亏约 ${Math.round(A.expDd)}%。`
     : `按你现在的“${lv.level.n}”配置，长期估算年化约 ${exp.toFixed(1)}%，在 5%–10% 的目标里。代价是大跌时可能浮亏约 ${Math.round(A.expDd)}%，要拿得住。`;
   let body;
   if (P.example) body = '<p class="note">录入真实持仓后，点“开始记录”，系统会从那天起算你的真实年化收益。</p>';
-  else if (!st) body = `<p style="font-size:13px">想知道自己实际赚了年化多少？从今天开始记录：系统把今天的总资产 ${fmt(A.total)} 记为起点，以后每次买卖记一笔就行。</p><div class="btnrow"><button class="btn" type="button" data-ledger="start" ${A.total > 0 ? '' : 'disabled'}>开始记录年化</button></div>${A.total > 0 ? '' : '<p class="note">先在“持仓”页填上金额。</p>'}`;
-  else if (st.irr == null) body = `<div class="stats"><div class="stat"><span class="k">记账以来</span><span class="v n">${st.days} 天</span></div><div class="stat"><span class="k">累计收益</span><span class="v n ${cls(st.gain)}">${signed(st.gain)}</span></div><div class="stat"><span class="k">累计收益率</span><span class="v n ${cls(st.gainPct)}">${pct(st.gainPct, 2)}</span></div></div>
+  else if (!st) body = `<p style="font-size:13px">想知道自己实际赚了年化多少？从今天开始记录：系统把今天的总资产 ${fmt(A.total)} 记为起点，以后每次从银行卡转钱进来、或者转回银行卡时记一笔就行。</p><div class="btnrow"><button class="btn" type="button" data-ledger="start" ${A.total > 0 ? '' : 'disabled'}>开始记录年化</button></div>${A.total > 0 ? '' : '<p class="note">先在“持仓”页填上金额。</p>'}`;
+  else if (st.irr == null) body = `<div class="stats"><div class="stat"><span class="k">记账以来</span><span class="v n">${st.days} 天</span></div><div class="stat"><span class="k">累计收益</span><span class="v n ${cls(Math.round(st.gain))}">${signed(Math.round(st.gain))}</span></div><div class="stat"><span class="k">累计收益率</span><span class="v n ${cls(st.gainPct)}">${pctN(st.gainPct, 2)}</span></div></div>
       <p class="note">记满 3 个月（还差 ${Math.max(0, 90 - st.days)} 天）才显示年化。时间太短，年化数字会被一两天的涨跌放大，没有参考意义。</p>`;
-  else body = `<div class="temp"><span>你的真实年化（从 ${cnDate(st.L.start)} 起）</span><span class="act ${st.irr >= GOAL.lo && st.irr <= GOAL.hi ? 'hold' : st.irr > GOAL.hi ? 'wait' : 'stop'}">${st.irr >= GOAL.lo && st.irr <= GOAL.hi ? '在目标里' : st.irr > GOAL.hi ? '高于目标' : '低于目标'}</span><span class="v n ${cls(st.irr)}">${pct(st.irr, 1)}</span><span class="sub">累计 ${signed(st.gain)}</span></div>
+  else {
+    const inGoal = st.irr >= GOAL.lo && st.irr <= GOAL.hi, above = st.irr > GOAL.hi;
+    body = `<div class="temp"><span>你的真实年化（从 ${fullDate(st.L.start)} 起）</span><span class="act ${above ? 'wait' : 'hold'}">${inGoal ? '在目标里' : above ? '高于目标' : '暂时低于目标'}</span><span class="v n ${cls(st.irr)}">${pctN(st.irr, 1)}</span><span class="sub">累计 ${signed(Math.round(st.gain))}</span></div>
+      <p class="note">“年化”相当于每年平均赚多少，已经考虑了钱是分批投进来的。</p>
       ${goalGauge(st.irr)}
-      <p class="note">${st.irr > GOAL.hi ? '高于 10% 通常是碰上了好行情，不代表以后也这样。别因此加大股票比例。' : st.irr < GOAL.lo ? (st.days < 730 ? '不到两年，低于目标很常见：股票类基金要经过一轮涨跌才能体现收益。坚持按计划定投。' : '两年以上仍低于目标，可以看看是不是常常没按计划操作，或者配置偏保守。') : '在目标里，继续按计划执行。'}</p>`;
+      ${st.days >= 365 ? `<p class="note">同一段时间，如果这些钱全放余额宝，现在大约是 ${fmt(st.cashVal)}；你现在是 ${fmt(A.total)}，${A.total >= st.cashVal ? `多了 ${fmt(A.total - st.cashVal)}` : `少了 ${fmt(st.cashVal - A.total)}。股票类基金要经过一轮涨跌才能体现收益，少的时候更要坚持`}。</p>` : ''}
+      <p class="note">${above ? '高于 10% 通常是碰上了好行情，不代表以后也这样。别因此加大股票比例，也别因为赚得多就加大每月金额或追买涨得多的基金。' : !inGoal ? (st.days < 730 ? '不到两年，低于目标很常见：股票类基金要经过一轮涨跌才能体现收益。这时候最不该做的是停投或卖出，坚持按计划定投。' : '两年以上仍低于目标。先看看有没有在大跌时停投或卖出，这是最常见的原因；配置没问题就继续按计划，别在低点卖掉。') : '在目标里，继续按计划执行。'}</p>`;
+  }
   return `<section class="card span2" aria-label="年化目标">
     <div class="card-h"><h3>年化目标 5%–10%</h3>${st ? '<a class="more" href="#holdings-ledger">记账 ›</a>' : ''}</div>
     ${body}
     <p class="note">${expNote}</p>
-    <details class="pickfrom"><summary>按每月 ${fmt(A.monthly)} 定投，以后大概有多少</summary>${futureTable(A.monthly, A.total)}<p class="note">按现在总资产 ${fmt(A.total)} 加上每月定投估算，假设每年收益都一样。实际会有涨有跌，坏的年份可能亏 20% 以上，这里只是帮你看清长期坚持的效果。</p></details>
+    <details class="pickfrom"><summary>按每月 ${fmt(A.monthly)} 定投，以后大概有多少</summary>${futureTable(A.monthly, A.total, exp)}<p class="note">按现在总资产 ${fmt(A.total)} 加上每月定投估算。这些都不是承诺：坏的年份可能亏 20% 以上，碰上不顺的十年，年化可能只有 2% 左右。</p></details>
   </section>`;
 }
 function ledgerSection(A) {
   const st = ledgerStats(A);
   if (P.example) return '';
   if (!st) return `<section class="card" id="sec-ledger"><h3>记账（用来算年化）</h3><p class="note">还没开始记录。到“看板 → 年化目标”点“开始记录年化”。</p></section>`;
-  const opts = A.items.map(i => `<option value="${esc(i.code)}">${esc(i.fund ? i.fund.short || i.fund.name : i.name)}</option>`).join('') + FUNDS.filter(f => f.pick && !A.items.some(i => i.code === f.code)).map(f => `<option value="${f.code}">${esc(f.short || f.name)}（未持有）</option>`).join('');
-  const list = st.L.txns.slice().sort((a, b) => b.d.localeCompare(a.d)).slice(0, 30);
+  const all = st.L.txns.slice().sort((a, b) => b.d.localeCompare(a.d) || b.id.localeCompare(a.id));
+  const row = t => `<div class="row static"><div class="t"><span class="n faint">${esc(t.d)}</span><span>${t.type === 'in' ? '从银行卡转入' : '转回银行卡'}${t.plan ? '<span class="tag">按计划</span>' : ''}</span></div><div class="r"><span class="n strong">${fmt(t.amt, 2)}</span> <button class="icon-btn sm" type="button" data-ledger="del" data-id="${esc(t.id)}" aria-label="删除这笔记录">${delTxn === t.id ? '确认' : '✕'}</button></div></div>`;
   return `<section class="card" id="sec-ledger">
-    <div class="card-h"><h3>记账（用来算年化）</h3><span class="sub">起点 ${cnDate(st.L.start)} · ${fmt(st.L.startValue)}</span></div>
-    <p class="note">每次在支付宝买入或卖出后记一笔，然后更新上面的持仓金额。只记账不更新持仓，或者只更新持仓不记账，年化都会算错。</p>
+    <div class="card-h"><h3>记账（用来算年化）</h3><span class="sub">起点 ${fullDate(st.L.start)} · ${fmt(st.L.startValue)}</span></div>
+    <p class="note">只记从银行卡转进支付宝的钱（不管是买基金还是存余额宝），和转回银行卡的钱。基金之间换、从余额宝买基金，都不用记。记完后到上面更新各基金的金额。</p>
     <div class="ledgerform">
       <label class="field">日期<input type="date" id="lg-d" value="${today()}" min="${st.L.start}" max="${today()}"></label>
-      <label class="field">基金<select id="lg-code">${opts}</select></label>
-      <label class="field">方向<select id="lg-type"><option value="buy">买入</option><option value="sell">卖出</option></select></label>
+      <label class="field">方向<select id="lg-type"><option value="in">从银行卡转入</option><option value="out">转回银行卡</option></select></label>
       <label class="field">金额（元）<input type="number" inputmode="decimal" id="lg-amt" min="0" step="0.01"></label>
       <button class="btn" type="button" data-ledger="add">记一笔</button>
     </div>
-    <div class="rows">${list.map(t => `<div class="row static"><div class="t"><span class="n faint">${esc(t.d.slice(5))}</span><span class="ell">${esc(t.name || t.code)}</span></div><div class="r"><span class="n ${t.type === 'buy' ? 'up' : 'down'}">${t.type === 'buy' ? '买入' : '卖出'} ${fmt(t.amt, 2)}</span> <button class="icon-btn sm" type="button" data-ledger="del" data-id="${esc(t.id)}" aria-label="删除这笔记录">✕</button></div></div>`).join('') || '<p class="muted pad">还没有记录。</p>'}</div>
-    ${st.L.txns.length > 30 ? `<p class="note">只显示最近 30 笔，共 ${st.L.txns.length} 笔。</p>` : ''}
+    <div class="rows">${all.slice(0, 5).map(row).join('') || '<p class="muted pad">还没有记录。</p>'}</div>
+    ${all.length > 5 ? `<details class="pickfrom"><summary>全部 ${all.length} 笔</summary><div class="rows">${all.slice(5, 300).map(row).join('')}</div></details>` : ''}
     <details class="pickfrom"><summary>重新设定起点</summary><p class="note">把今天的总资产 ${fmt(A.total)} 设为新起点，之前的记账会清空。</p><button class="btn danger" type="button" data-ledger="restart">${ledgerArm ? '再点一次确认' : '重新开始记录'}</button></details>
   </section>`;
 }
-let ledgerArm = false;
+let ledgerArm = false, delTxn = null;
 function ledgerAction(act, t) {
   const A = analyze();
   if (act === 'start' || (act === 'restart' && ledgerArm)) { P.ledger = { start: today(), startValue: Math.round(A.total * 100) / 100, txns: [] }; ledgerArm = false; save(); render(true); toast('已开始记录，起点是今天的总资产'); }
   else if (act === 'restart') { ledgerArm = true; render(true); }
   else if (act === 'add') {
-    const d = $('#lg-d').value, code = $('#lg-code').value, type = $('#lg-type').value, amt = Math.round(Number($('#lg-amt').value) * 100) / 100;
+    const d = $('#lg-d').value, type = $('#lg-type').value, amt = Math.round(Number($('#lg-amt').value) * 100) / 100;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d < P.ledger.start || d > today()) { toast('日期要在起点和今天之间'); return; }
-    if (!(amt > 0)) { toast('金额要大于 0'); $('#lg-amt').focus(); return; }
-    const it = P.items.find(i => i.code === code), f = FUND[code];
-    P.ledger.txns.push({ id: 't' + Date.now(), d, code, name: f ? f.short || f.name : (it && it.name) || code, type, amt });
-    save(); render(true); toast('已记一笔。别忘了更新这只基金的持仓金额');
+    if (!(amt > 0) || amt > 1e9) { toast('金额要大于 0'); $('#lg-amt').focus(); return; }
+    if (type !== 'in' && type !== 'out') return;
+    P.ledger.txns.push({ id: 't' + Date.now(), d, type, amt });
+    save(); render(true); toast('已记一笔。别忘了在上面更新各基金的金额');
   }
-  else if (act === 'del') { P.ledger.txns = P.ledger.txns.filter(x => x.id !== t.dataset.id); save(); render(true); toast('已删除'); }
+  else if (act === 'del') {
+    if (delTxn !== t.dataset.id) { delTxn = t.dataset.id; render(true); return; }
+    P.ledger.txns = P.ledger.txns.filter(x => x.id !== delTxn); delTxn = null; save(); render(true); toast('已删除');
+  }
   else if (act === 'plan') {
     if (!P.ledger) { toast('先在看板上点“开始记录年化”'); return; }
     const mk = monthKey(); if (P.ledger.txns.some(x => x.plan === mk)) { toast('这个月的计划已经记过了'); return; }
-    const rows = A.plan.filter(p => p.cat !== 'cash' && p.amt >= 1);
-    rows.forEach((p, i) => P.ledger.txns.push({ id: 't' + Date.now() + i, d: today(), code: p.fund.code, name: p.fund.short || p.fund.name, type: 'buy', amt: Math.round(p.amt), plan: mk }));
-    save(); render(true); toast(`已按计划记了 ${rows.length} 笔买入。去“持仓”页更新金额`);
+    // 从银行卡转出的钱 = 本月计划合计 − 从余额宝里取的部分（那部分是账户内部的钱）
+    const amt = Math.round(A.planTotal - A.extra);
+    if (amt < 1) { toast('这个月计划里没有需要从银行卡转入的钱'); return; }
+    P.ledger.txns.push({ id: 't' + Date.now(), d: today(), type: 'in', amt, plan: mk });
+    save(); render(true); toast(`已记一笔：从银行卡转入 ${fmt(amt)}。去“持仓”页更新各基金金额`);
   }
 }
-
 /* ================= AI 助手（DeepSeek） =================
  * key 只存在这台设备的浏览器里（localStorage 的 money.ai），不进备份文件，不上传到 GitHub。
  * AI 只负责解释规则引擎算出来的建议，不改规则、不编数据。
@@ -1219,7 +1233,7 @@ function renderInner(force) {
   if (tab === 'analysis' && $('#ai-q')) $('#ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aiAction('ask'); } });
   if (tab === 'me') bindMe();
 }
-window.addEventListener('hashchange', () => { delArm = false; if (aiBusy) aiBusy.abort(); render(); });
+window.addEventListener('hashchange', () => { delArm = false; delTxn = null; ledgerArm = false; if (aiBusy) aiBusy.abort(); render(); });
 
 /* ================= 交互 ================= */
 document.addEventListener('click', e => {
