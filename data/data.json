@@ -1,18 +1,18 @@
 {
- "updated": "2026-10-28 19:53",
+ "updated": "2026-10-28 19:55",
  "market": {
   "bondNote": "2026 年长端利率上行，接近一半的中长期纯债基金今年没有赚到钱，所以债券部分以短久期为主。",
   "hs300": {
    "pe": 12.86,
    "pePct10y": 52.5,
-   "date": "10-28",
+   "date": "2026-10-28",
    "dy": 3.02,
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
   "divLowVol": {
    "pe": 9.01,
    "dy": 4.62,
-   "date": "10-28",
+   "date": "2026-10-28",
    "pePct10y": 80.2,
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
@@ -21,22 +21,78 @@
    "date": "2026-10-28",
    "src": "https://data.eastmoney.com/cjsj/zmgzsyl.html"
   },
-  "hs300Hist": [],
-  "divLowVolHist": [],
+  "hs300Hist": [
+   {
+    "year": 2021,
+    "ret": -2.04
+   },
+   {
+    "year": 2022,
+    "ret": -11.17
+   },
+   {
+    "year": 2023,
+    "ret": -4.95
+   },
+   {
+    "year": 2024,
+    "ret": 7.43
+   },
+   {
+    "year": 2025,
+    "ret": 10.05
+   },
+   {
+    "year": 2026,
+    "ret": -5.71,
+    "label": "2026至今",
+    "note": "今年以来"
+   }
+  ],
+  "divLowVolHist": [
+   {
+    "year": 2021,
+    "ret": 18.1
+   },
+   {
+    "year": 2022,
+    "ret": 2.72
+   },
+   {
+    "year": 2023,
+    "ret": 10.81
+   },
+   {
+    "year": 2024,
+    "ret": 19.35
+   },
+   {
+    "year": 2025,
+    "ret": 3.59
+   },
+   {
+    "year": 2026,
+    "ret": 3.18,
+    "label": "2026至今",
+    "note": "今年以来"
+   }
+  ],
   "sp500": {
    "pe": 24.62,
    "pePct10y": 52.0,
    "dy": 1.02,
-   "date": "10-27",
+   "date": "2026-10-27",
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
   "ndx": {
    "pe": 29.2,
    "pePct10y": 40.5,
    "dy": 0.44,
-   "date": "10-27",
+   "date": "2026-10-27",
    "src": "https://danjuanfunds.com/djmodule/value-center"
-  }
+  },
+  "hs300HistSrc": "联接基金净值",
+  "divLowVolHistSrc": "联接基金净值"
  },
  "funds": [
   {
@@ -4520,9 +4576,11 @@
   "fund:007466": "ok",
   "fund:163406": "ok",
   "fund:161005": "ok",
+  "valuationCodes": "935600,CSI716567,CSI930652,CSI930740,CSI930782,CSI931079,CSI931087,CSI931142,CSI931157,CSIH11136,CSIH30094,CSIH30269,CSIH30533,CSPSADRP,GDAXI,HKHSCEI,HKHSI,HKHSSCNE,HKHSTECH,HSFML25,NDX,SH000010,SH000015,SH000016,SH000170,SH000300,SH000688,SH000827,SH000852,SH000903,SH000905,SH000919,SH000922,SH000925,SH000932,SH000978,SH000989,SH000991,SH000993,SP500,SPACEVCP,SPCQVCP,SPHCMSHP,SZ399001,SZ399006,SZ399317,SZ399324,SZ399330,SZ399393,SZ399396,SZ399417,SZ399550,SZ399610,SZ399701,SZ399702,SZ399812,SZ399967,SZ399971,SZ399975,SZ399986,SZ399989,SZ399997,SZ399998",
   "valuation": "ok",
   "cgb10y": "ok",
-  "hs300Hist": "failed: Remote end closed connection without response",
-  "divLowVolHist": "failed: Remote end closed connection without response"
+  "ust10y": "failed: The read operation timed out",
+  "hs300Hist": "failed (用联接基金代替): Remote end closed connection without response",
+  "divLowVolHist": "failed (用联接基金代替): Remote end closed connection without response"
  }
 }
