@@ -187,9 +187,11 @@ function metric(f, key) {
   }
   return null;
 }
+/* 评分分组：海外按跟踪的指数分开比（标普500 只和标普500 比），避免拿不同指数的历史涨幅互相比 */
+const groupOf = f => f.cat === 'overseas' ? 'overseas:' + (f.val || '') : f.cat;
 function scoreAll() {
-  C.cats.forEach(c => {
-    const fs = FUNDS.filter(f => f.cat === c.k), w = W[c.k];
+  [...new Set(FUNDS.map(groupOf))].forEach(g => {
+    const fs = FUNDS.filter(f => groupOf(f) === g), w = W[fs[0].cat];
     fs.forEach(f => { f.score = 0; f.parts = {}; f.missing = []; });
     Object.keys(w).forEach(key => {
       const vals = fs.map(f => metric(f, key)).filter(v => v != null);
@@ -232,7 +234,7 @@ function analyze() {
   const expRet = C.cats.reduce((a, c) => a + T[c.k] / 100 * c.ret, 0);
   const expDd = C.cats.reduce((a, c) => a + T[c.k] / 100 * c.dd, 0);
   const curDd = total ? C.cats.reduce((a, c) => a + w[c.k] / 100 * c.dd, 0) : expDd;
-  const bestOf = k => { const ps = picksOf(k); if (ps.length) return ps[0]; return k === 'active' ? picksOf('index')[0] : null; };
+  const bestOf = (k, f) => { const ps = picksOf(k); const same = f ? ps.find(p => groupOf(p) === groupOf(f)) : null; if (same) return same; if (ps.length) return ps[0]; return k === 'active' ? picksOf('index')[0] : null; };
 
   // 本月定投计划：只买推荐基金。超配的类别本月不买；估值贵的少买；没买的钱放进余额宝
   const monthly = +P.monthly || 0, plan = []; let parked = 0; const parkedWhy = [];
@@ -264,7 +266,7 @@ function analyze() {
   const adv = items.map(i => {
     const c = CAT[i.cat], f = i.fund, sig = sigOf(i.cat, f), cost = i.amount - i.profit, pp = cost > 0 ? i.profit / cost * 100 : 0;
     const share = byCat[i.cat] ? i.amount / byCat[i.cat] : 0;
-    const best = (noActive && i.cat === 'active') ? picksOf('index')[0] : bestOf(i.cat);
+    const best = (noActive && i.cat === 'active') ? picksOf('index')[0] : bestOf(i.cat, f);
     const under = C.cats.filter(x => x.k !== 'cash' && x.k !== i.cat && dev[x.k] < 0 && T[x.k] > 0).sort((x, y) => dev[x.k] - dev[y.k]).map(x => x.n).slice(0, 2);
     // 同类已经超配时，卖出的钱不再买同类，而是补到占比不够的类别
     const bestName = over(i.cat) ? (under.length ? `占比不够的${under.join('、')}` : '余额宝') : best ? (best.short || best.name) : '余额宝';
@@ -558,11 +560,12 @@ function viewAnalysis(A) {
 }
 let cmpCat = 'index';
 function compareTable(k) {
-  const fs = FUNDS.filter(f => f.cat === k).sort((a, b) => a.rank - b.rank);
+  const fs = FUNDS.filter(f => f.cat === k).sort((a, b) => groupOf(a).localeCompare(groupOf(b)) || a.rank - b.rank);
   const wk = Object.keys(W[k]).map(x => MNAME[x] + ' ' + Math.round(W[k][x] * 100) + '%').join(' · ');
+  const note = k === 'overseas' ? '海外按跟踪的指数分组打分：标普500 只和标普500 比，纳指100 只和纳指100 比。' : '';
   return `<div class="tbox"><table><thead><tr><th>基金</th><th style="min-width:120px">评分</th><th class="r">年费率</th><th class="r">规模(亿)</th><th class="r">近3年</th><th class="r">最大回撤</th></tr></thead><tbody>
     ${fs.map(f => `<tr class="${f.pick ? 'best' : ''}"><td><a href="#fund-${f.code}" class="plain strong">${esc(f.short || f.name)}</a> ${f.pick ? '<span class="tag pick">推荐</span>' : ''}<div class="sub n">${f.code}</div></td><td>${scoreBar(f.score)}</td><td class="r">${totalFee(f) == null ? '—' : totalFee(f).toFixed(2) + '%'}</td><td class="r">${f.scaleYi == null ? '—' : f.scaleYi.toFixed(0)}</td><td class="r ${cls(f.ret3y)}">${pct(f.ret3y)}</td><td class="r">${f.maxDd3y == null ? '—' : '−' + Math.abs(f.maxDd3y).toFixed(1) + '%'}</td></tr>`).join('')}
-  </tbody></table></div><p class="note">评分权重：${wk}。缺数据的项按偏低分计。推荐基金不一定分数最高，理由见基金详情里的“我的判断”。</p>`;
+  </tbody></table></div><p class="note">${note}评分权重：${wk}。缺数据的项按偏低分计。推荐基金不一定分数最高，理由见基金详情里的“我的判断”。</p>`;
 }
 
 let fundFilter = 'all';
@@ -586,7 +589,7 @@ function viewFunds() {
 function viewFund(code, A) {
   const f = FUND[code]; if (!f) return `<div class="view"><button class="back" type="button" data-back>‹ 返回</button><p>没有找到这只基金。</p></div>`;
   const c = CAT[f.cat], sig = sigOf(f.cat, f), hold = A.advice.find(x => x.code === code);
-  const peers = FUNDS.filter(x => x.cat === f.cat).sort((a, b) => a.rank - b.rank);
+  const peers = FUNDS.filter(x => groupOf(x) === groupOf(f)).sort((a, b) => a.rank - b.rank);
   const parts = Object.keys(W[f.cat]).map(k => `<div class="part"><span class="muted">${MNAME[k]}</span>${scoreBar(Math.round(f.parts[k] * 100), `var(--s-${f.cat})`)}</div>`).join('');
   return `<div class="view">
   <button class="back" type="button" data-back>‹ 返回</button>
@@ -631,7 +634,7 @@ function viewFund(code, A) {
     <section class="card"><div class="card-h"><h3>逐年收益</h3><span class="sub">红涨绿跌</span></div>${yearBars(f.yearRets)}</section>
     <section class="card"><div class="card-h"><h3>评分拆解</h3><span class="n strong">${f.score} 分</span></div>${parts}${f.missing.length ? `<p class="note">缺少数据：${f.missing.join('、')}，按偏低分计。</p>` : ''}</section>
   </div>
-  <section class="card"><div class="card-h"><h3>同类对比</h3><span class="sub">${c.n}</span></div>
+  <section class="card"><div class="card-h"><h3>同类对比</h3><span class="sub">${f.cat === 'overseas' ? (f.index || c.n) : c.n}</span></div>
     <div class="rows">${peers.map(p => `<a class="row ${p.code === code ? 'cur' : ''}" href="#fund-${p.code}"><div class="t"><span class="n faint">${p.rank}</span><span class="ell">${esc(p.short || p.name)}</span>${p.pick ? '<span class="tag pick">推荐</span>' : ''}</div><div class="r n strong">${p.score}</div><div class="s n">费率 ${totalFee(p) == null ? '—' : totalFee(p).toFixed(2) + '%'} · 规模 ${p.scaleYi == null ? '—' : p.scaleYi.toFixed(0) + '亿'} · 近3年 ${pct(p.ret3y)}</div></a>`).join('')}</div>
   </section>
   </div>`;

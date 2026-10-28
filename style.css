@@ -268,5 +268,5 @@ a.plain:hover{text-decoration:underline}
 }
 @media (min-width:700px) and (max-width:899px){
   .grid2,.grid3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-  .grid3 .span2,.grid3>.hero{grid-column:1/-1}
+  .grid3 .span2,.grid3>.hero,.grid3>.hero+.card{grid-column:1/-1}
 }
