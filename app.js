@@ -321,7 +321,7 @@ function analyze() {
     else if (!f.pick && best && best.score - f.score >= R.swapScoreGap && groupOf(best) === groupOf(f) && !KEYDATA.some(k => (f.missing || []).includes(MNAME[k]) || (best.missing || []).includes(MNAME[k])))
       a = sell('换成更好的', [`跟踪同一个指数的基金里，它的综合评分 ${f.score} 分，推荐的 ${best.short || best.name} 是 ${best.score} 分（看费率、规模、3年收益和回撤，不看短期涨幅）。`], `卖出的钱买 ${best.short || best.name}。持有不满 7 天卖出要交 1.5% 赎回费。`);
     else if (c.eq && sig.m === 0 && pp >= R.takeProfitPct) {
-      const tp = under(i.cat).map(x => x.n)[0] || '债券';
+      const tp = und.length ? `占比不够的${und.join('、')}` : '余额宝';
       a = { k: 'sell', t: '分批止盈', amt: Math.round(i.amount * R.takeProfitSlice), why: [`估值${sig.t}（${valText(i.cat, f)}），你这只赚了 ${pp.toFixed(0)}%。`, `这个月先卖 ${R.takeProfitSlice * 100}%，钱转到${tp}。估值不降就每月再卖一次，不一次卖光，防止卖早。`] };
     } else if (over(i.cat) && c.eq && sig.m >= 1.5) {
       a = { k: 'hold', t: '持有不买', amt: 0, why: [`${c.n}超配了 ${dev2[i.cat].toFixed(0)} 个百分点，但现在估值${sig.t}，便宜的时候不卖。本月不再买这一类，用新钱补其他类别。`] };
@@ -332,11 +332,11 @@ function analyze() {
         ? { k: 'move', t: '转出补仓', amt, excess, why: [`余额宝里放了 ${w2.cash.toFixed(0)}%，目标 ${T.cash}%，闲置太多。`] }   // 金额在下面按“能买多少”再定
         : { k: 'sell', t: '减仓', amt, why: [`${c.n}${dev2[i.cat] < dev[i.cat] - 0.5 ? '（扣掉正在卖出的基金后）' : ''}占 ${w2[i.cat].toFixed(0)}%，目标 ${T[i.cat]}%，超了 ${dev2[i.cat].toFixed(0)} 个百分点。本月不再买这一类。`, `超出的共 ${fmt(excess)}，分 ${R.sellMonths} 个月卖，这个月卖 ${fmt(amt)}，钱按下面“本月卖出的钱怎么买”去买。`] };
     } else if (c.eq && sig.m === 0) {
-      a = { k: 'stop', t: '暂停买入', amt: 0, why: [`估值${sig.t}（${valText(i.cat, f)}），拿着不动，这个月不再买。`, pp < R.takeProfitPct ? `目前赚 ${pp.toFixed(0)}%，没到 ${R.takeProfitPct}% 的止盈线，不用卖。` : ''] };
+      a = { k: 'stop', t: '暂停买入', amt: 0, why: [`估值${sig.t}（${valText(i.cat, f)}），拿着不动，这个月不再买。`, pp < R.takeProfitPct ? (pp < 0 ? `目前亏 ${Math.abs(pp).toFixed(0)}%，不要在贵的时候加仓摊低成本，拿着等。` : `目前赚 ${pp.toFixed(0)}%，没到 ${R.takeProfitPct}% 的止盈线，不用卖。`) : ''] };
     } else {
       const p = planFor(i.code), low = dev2[i.cat] <= -R.rebalanceBand;
-      if (p && p.amt > 0 && i.cat !== 'cash') a = { k: 'buy', t: low ? '加仓' : '按计划定投', amt: Math.round(p.amt), why: [low ? `${c.n}占 ${w2[i.cat].toFixed(0)}%，比目标 ${T[i.cat]}% 少 ${Math.abs(dev2[i.cat]).toFixed(0)} 个百分点，估值${sig.t}。` : `比例正常，估值${sig.t}。`, `本月买入 ${fmt(p.amt)}${p.m !== 1 ? `（平时的 ${p.m} 倍）` : ''}。`] };
-      else if (i.cat === 'cash') a = { k: 'hold', t: '持有', amt: 0, why: [extra > 0 ? `本月便宜的类别要多买，从余额宝里取 ${fmt(extra)}。` : p && p.amt > 0 ? `本月存入 ${fmt(p.amt)}。` : '比例正常，不用操作。'] };
+      if (p && Math.round(p.amt) >= 1 && i.cat !== 'cash') a = { k: 'buy', t: low ? '加仓' : '按计划定投', amt: Math.round(p.amt), why: [low ? `${c.n}占 ${w2[i.cat].toFixed(0)}%，比目标 ${T[i.cat]}% 少 ${Math.abs(dev2[i.cat]).toFixed(0)} 个百分点，估值${sig.t}。` : `比例正常，估值${sig.t}。`, `本月买入 ${fmt(p.amt)}${p.m !== 1 ? `（平时的 ${p.m} 倍）` : ''}。`] };
+      else if (i.cat === 'cash') a = { k: 'hold', t: '持有', amt: 0, why: [extra > 0 ? `本月便宜的类别要多买，从余额宝里取 ${fmt(extra)}。` : p && Math.round(p.amt) >= 1 ? `本月存入 ${fmt(p.amt)}。` : '比例正常，不用操作。'] };
 
       else a = { k: 'hold', t: '持有', amt: 0, why: [f.pick ? '比例正常，不用操作。' : `不是推荐基金，但和推荐的 ${best ? best.short || best.name : ''} 差距不大，可以继续拿着，新钱买推荐的那只。`] };
     }
@@ -348,7 +348,8 @@ function analyze() {
   // 余额宝转出多少：只转“能买进去”的部分。其他卖出的钱先用掉买入空间，剩下的空间才从余额宝补；没有空间就不转
   const sellFreed = adv.filter(x => x.adv.k === 'sell').reduce((a, x) => a + x.adv.amt, 0);
   adv.filter(x => x.adv.t === '转出补仓').forEach(x => {
-    const room = Math.max(0, capacity - sellFreed), amt = Math.round(Math.min(x.adv.excess / R.sellMonths, room));
+    // 不超过：超出部分的三分之一、能买进去的空间、余额宝余额扣掉本月定投要取的部分
+    const room = Math.max(0, capacity - sellFreed), amt = Math.round(Math.max(0, Math.min(x.adv.excess / R.sellMonths, room, x.amount - extra)));
     if (amt < 1) x.adv = { k: 'hold', t: '持有', amt: 0, why: [`余额宝放了 ${w2.cash.toFixed(0)}%，比目标多，但现在占比不够的类别要么估值很贵、要么已经补满，先放着，等能买的时候再转出。`] };
     else x.adv = { k: 'move', t: '转出补仓', amt: Math.round(amt + extra), why: x.adv.why.concat(extra > 0
       ? `这个月一共从余额宝取 ${fmt(amt + extra)}：其中 ${fmt(amt)} 按下面“本月卖出的钱怎么买”去买，${fmt(extra)} 用在本月定投多买的部分。`
@@ -363,7 +364,8 @@ function analyze() {
     const needSum = cands.reduce((a, x) => a + x.need, 0);
     cands.forEach(x => {
       const share = Math.min(x.need, freed * x.need / needSum);
-      x.ps.forEach(p => { const v = share * (p.split || 1 / x.ps.length); reinvest.push({ fund: p, cat: x.c.k, amt: v }); freedLeft -= v; });
+      const sp = x.ps.reduce((a, p) => a + (p.split || 1), 0);   // 只在能买的推荐基金之间分（比如纳指很贵时，海外的钱全给标普）
+      x.ps.forEach(p => { const v = share * (p.split || 1) / sp; reinvest.push({ fund: p, cat: x.c.k, amt: v }); freedLeft -= v; });
     });
     freedLeft = Math.max(0, freedLeft);
   }
@@ -373,10 +375,10 @@ function analyze() {
   const missing = FUNDS.filter(f => f.pick && !held.has(f.code) && T[f.cat] > 0 && !(noActive && f.cat === 'active')).map(f => {
     const sig = sigOf(f.cat, f), p = planFor(f.code), heldSame = items.some(i => i.cat === f.cat && !i.exit);
     let a;
-    if (f.cat === 'cash') a = p && p.amt > 0 ? { k: 'buy', t: '开始存入', amt: Math.round(p.amt), why: [`还没有余额宝。它是组合的应急钱和“弹药库”，本月存入 ${fmt(p.amt)}。`] } : { k: 'hold', t: '先不存', amt: 0, why: ['还没有余额宝。这个月的钱都用在买基金上了，下个月再开始存。'] };
+    if (f.cat === 'cash') a = p && Math.round(p.amt) >= 1 ? { k: 'buy', t: '开始存入', amt: Math.round(p.amt), why: [`还没有余额宝。它是组合的应急钱和“弹药库”，本月存入 ${fmt(p.amt)}。`] } : { k: 'hold', t: '先不存', amt: 0, why: ['还没有余额宝。这个月的钱都用在买基金上了，下个月再开始存。'] };
     else if (!monthly) a = { k: 'hold', t: '待设置', amt: 0, why: ['还没设置每月定投金额。到“我的 → 偏好”里填上，系统才能算出每只买多少。'] };
     else if (over(f.cat)) a = { k: 'hold', t: '先不买', amt: 0, why: [`${CAT[f.cat].n}已经超配，本月不买。等比例回到目标附近再开始定投。`] };
-    else if (!p || p.amt <= 0) a = { k: 'stop', t: '先不买', amt: 0, why: [`估值${sig.t}（${valText(f.cat, f)}）。等估值回落再开始定投，这部分钱先放余额宝。`] };
+    else if (!p || Math.round(p.amt) < 1) a = { k: 'stop', t: '先不买', amt: 0, why: [`估值${sig.t}（${valText(f.cat, f)}）。等估值回落再开始定投，这部分钱先放余额宝。`] };
     else a = { k: 'buy', t: '开始买入', amt: Math.round(p.amt), why: [`组合里还没有这只${heldSame ? '' : `，也还没有${CAT[f.cat].n}这一类`}。估值${sig.t}，从本月开始定投 ${fmt(p.amt)}。`] };
     if (f.limit && a.k === 'buy') a.why.push(`这只有限购：${f.limit}。买不满的部分留在余额宝。`);
     return { code: f.code, fund: f, cat: f.cat, name: f.name, amount: 0, profit: 0, pp: 0, adv: a, notHeld: true };
@@ -604,8 +606,8 @@ function viewAnalysis(A) {
   ${A.freed > 0 ? `<section class="card" id="sec-reinvest">
     <div class="card-h"><h3>本月卖出的钱怎么买</h3><span class="sub">共 ${fmt(A.freed)}</span></div>
     <div class="tbox"><table><thead><tr><th>买入</th><th>原因</th><th class="r">金额</th></tr></thead><tbody>
-      ${A.reinvest.filter(r => r.amt >= 1).map(r => `<tr><td>${dot(r.cat)} <a href="#fund-${r.fund.code}" class="plain">${esc(r.fund.short || r.fund.name)}</a></td><td class="muted">${CAT[r.cat].n}比目标少 ${Math.abs(A.dev2[r.cat]).toFixed(0)} 个点</td><td class="r strong">${fmt(r.amt)}</td></tr>`).join('')}
-      ${A.freedLeft >= 1 ? `<tr><td>${dot('cash')} 余额宝</td><td class="muted">其他类别不缺，或者估值太贵</td><td class="r strong">${fmt(A.freedLeft)}</td></tr>` : ''}
+      ${A.reinvest.filter(r => r.amt >= 1).map(r => `<tr><td><span class="cellname">${dot(r.cat)}<a href="#fund-${r.fund.code}" class="plain">${esc(r.fund.short || r.fund.name)}</a></span></td><td class="muted">${CAT[r.cat].n}比目标少 ${Math.abs(A.dev2[r.cat]).toFixed(0)} 个点</td><td class="r strong">${fmt(r.amt)}</td></tr>`).join('')}
+      ${A.freedLeft >= 1 ? `<tr><td><span class="cellname">${dot('cash')}<span>余额宝</span></span></td><td class="muted">${A.cashOver ? '暂时停放：' : ''}其他类别不缺，或者估值太贵，等能买的时候再用</td><td class="r strong">${fmt(A.freedLeft)}</td></tr>` : ''}
       <tr><td colspan="2"><b>合计</b></td><td class="r strong">${fmt(A.freed)}</td></tr></tbody></table></div>
     <p class="note">按各类比目标少多少来分，缺得多的多买；估值“很贵”的类别不买。这笔钱和每月定投分开算。${A.swaps.length ? '换基的钱直接买同类推荐基金，不在这张表里。' : ''}</p>
   </section>` : ''}
@@ -613,7 +615,7 @@ function viewAnalysis(A) {
   <section class="card" id="sec-plan">
     <div class="card-h"><h3>本月定投计划</h3><span class="sub">每月基础 ${fmt(A.monthly)}</span></div>
     <div class="tbox"><table><thead><tr><th>基金</th><th>估值信号</th><th class="r">倍数</th><th class="r">金额</th></tr></thead><tbody>
-      ${A.plan.map(p => `<tr><td>${dot(p.cat)} <a href="#fund-${p.fund.code}" class="plain">${esc(p.fund.short || p.fund.name)}</a>${p.note ? ` <span class="tag">${esc(p.note)}</span>` : ''}</td><td>${p.note === '已超配' ? '<span class="act hold">不买</span>' : sigChip(p.sig)}</td><td class="r">${p.cat === 'cash' ? (A.extra > 0 ? `取出 ${fmt(A.extra)}` : '净额') : p.m + '×'}</td><td class="r strong">${fmt(p.amt)}</td></tr>`).join('')}
+      ${A.plan.map(p => `<tr><td><span class="cellname">${dot(p.cat)}<a href="#fund-${p.fund.code}" class="plain">${esc(p.fund.short || p.fund.name)}</a>${p.note ? `<span class="tag">${esc(p.note)}</span>` : ''}</span></td><td>${p.note === '已超配' ? '<span class="act hold">不买</span>' : sigChip(p.sig)}</td><td class="r">${p.cat === 'cash' ? (A.extra > 0 ? `取出 ${fmt(A.extra)}` : '净额') : p.m + '×'}</td><td class="r strong">${fmt(p.amt)}</td></tr>`).join('')}
       <tr><td colspan="3"><b>合计</b></td><td class="r strong">${fmt(A.planTotal)}</td></tr></tbody></table></div>
     ${planNote(A)}<p class="note">规则：便宜的类别多买，贵的少买或暂停，已经超配的本月不买；某类比目标少 ${C.rules.catchUpBand} 个点以上且不贵时，额外多买 0.5 倍。余额宝一行是净额。</p>
   </section>

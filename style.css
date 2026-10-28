@@ -278,4 +278,5 @@ a.plain:hover{text-decoration:underline}
 }
 .hero-row .v,.temp .v{white-space:nowrap}
 .temp .v{font-size:clamp(19px,5.5vw,24px)}
-@media (max-width:899px){td a.plain{display:inline-flex;align-items:center;min-height:44px}}
+td .cellname{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+@media (max-width:899px){td .cellname{min-height:44px}td .cellname a.plain{padding-block:12px}}
