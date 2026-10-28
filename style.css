@@ -313,3 +313,4 @@ td .cellname .tag{flex:none}
 @media (max-width:899px){.icon-btn.sm{width:44px;height:44px}}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
 .calrow{display:grid;gap:6px;justify-items:start}
+.calrow,[id^="sec-"],#me-quiz,#me-ai{scroll-margin-top:120px}
