@@ -189,11 +189,29 @@ def fetch_valuations():
 
 
 def fetch_ust10y():
-    """美国 10 年期国债收益率：美联储圣路易斯分行 FRED 的 DGS10 序列（CSV，免账号）。"""
-    rows = [l.split(',') for l in get('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10', referer='https://fred.stlouisfed.org/').strip().splitlines()[1:]]
-    rows = [r for r in rows if len(r) == 2 and r[1] not in ('.', '')]
-    d, v = rows[-1]
-    return {'yield': round(float(v), 2), 'date': d, 'src': 'https://fred.stlouisfed.org/series/DGS10'}
+    """美国 10 年期国债收益率。先试美国财政部官网的每日收益率曲线（CSV），不行再试 FRED 的 DGS10。"""
+    errors = []
+    for year in (NOW.year, NOW.year - 1):
+        try:
+            url = ('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/'
+                   f'{year}/all?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv')
+            lines = get(url, referer='https://home.treasury.gov/', timeout=45).strip().splitlines()
+            head = [h.strip().strip('"') for h in lines[0].split(',')]
+            i = head.index('10 Yr')
+            row = [c.strip().strip('"') for c in lines[1].split(',')]  # 最新一天在第一行
+            m, d, y = row[0].split('/')
+            return {'yield': round(float(row[i]), 2), 'date': f'{y}-{m}-{d}',
+                    'src': 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates'}
+        except Exception as e:  # noqa: BLE001
+            errors.append(f'treasury {year}: {e}')
+    try:
+        rows = [l.split(',') for l in get('https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10', referer='https://fred.stlouisfed.org/', timeout=45).strip().splitlines()[1:]]
+        rows = [r for r in rows if len(r) == 2 and r[1] not in ('.', '')]
+        d, v = rows[-1]
+        return {'yield': round(float(v), 2), 'date': d, 'src': 'https://fred.stlouisfed.org/series/DGS10'}
+    except Exception as e:  # noqa: BLE001
+        errors.append(f'fred: {e}')
+    raise RuntimeError('; '.join(errors))
 
 
 def fetch_cgb10y():
