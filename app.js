@@ -41,14 +41,16 @@ function newProfile(name) {
 /* 检查并修复一份档案数据：导入备份和读取本机数据都要过这一步，坏数据不会让页面卡死 */
 const num = v => (typeof v === 'number' && isFinite(v)) ? v : (v === '' || v == null ? 0 : (isFinite(+v) ? +v : 0));
 let CASH_DROPPED = false;
+const CASH_NOTE = new WeakMap();   // 这次打开时，哪个用户的余额宝被移出了、移出多少（只提示一次）
 function cleanProfile(p, fallbackName) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  let dropped = 0;
   const out = newProfile(typeof p.name === 'string' && p.name.trim() ? p.name.trim().slice(0, 12) : fallbackName);
   out.example = p.example === true;
   out.monthly = Math.max(0, num(p.monthly));
   out.items = (Array.isArray(p.items) ? p.items : []).filter(i => i && typeof i === 'object' && typeof i.code === 'string')
     .filter((i, idx, arr) => arr.findIndex(x => x && x.code === i.code) === idx)
-    .filter(i => { if (i.code === '000198' || i.cat === 'cash') { CASH_DROPPED = true; return false; } return true; })   // 余额宝不再算进组合：旧数据里的直接移出持仓，不用卖
+    .filter(i => { if (i.code === '000198' || i.cat === 'cash') { CASH_DROPPED = true; dropped += Math.max(0, num(i.amount)); return false; } return true; })   // 余额宝不再算进组合：旧数据里的直接移出持仓，不用卖
     .map(i => ({ code: i.code.slice(0, 40), name: typeof i.name === 'string' ? i.name.slice(0, 40) : undefined, cat: typeof i.cat === 'string' ? i.cat : undefined, amount: num(i.amount), profit: num(i.profit) }));
   out.history = (Array.isArray(p.history) ? p.history : []).filter(h => h && typeof h.d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(h.d)).map(h => ({ d: h.d, total: num(h.total), profit: num(h.profit), eq: num(h.eq) })).slice(-600);
   out.journal = (Array.isArray(p.journal) ? p.journal : []).filter(j => j && typeof j.m === 'string' && /^\d{4}-\d{2}$/.test(j.m) && CHOICES[j.choice]).map(j => ({ m: j.m, choice: j.choice, at: typeof j.at === 'string' ? j.at : '' }));
@@ -66,6 +68,9 @@ function cleanProfile(p, fallbackName) {
     ? { start: lg.start, startValue: +lg.startValue, txns: (Array.isArray(lg.txns) ? lg.txns : []).filter(t => t && validDay(t.d) && ['in', 'out', 'buy', 'sell'].includes(t.type) && +t.amt > 0 && +t.amt <= 1e9)
         .map((t, i, arr) => ({ id: typeof t.id === 'string' && arr.findIndex(x => x && x.id === t.id) === i ? t.id.slice(0, 40) : 'imp' + i + '-' + Math.random().toString(36).slice(2, 7), d: t.d, type: t.type === 'buy' ? 'in' : t.type === 'sell' ? 'out' : t.type, amt: Math.round(+t.amt * 100) / 100, plan: typeof t.plan === 'string' ? t.plan : undefined })).slice(-2000) }
     : null;
+  // 移出的余额宝按“转回银行卡”记一笔，不然年化记账会把它算成亏损
+  if (dropped > 0 && out.ledger) out.ledger.txns.push({ id: 'cash-out-' + today(), d: today() < out.ledger.start ? out.ledger.start : today(), type: 'out', amt: Math.round(dropped * 100) / 100, plan: '余额宝移出组合' });
+  if (dropped > 0) CASH_NOTE.set(out, { amt: dropped, ledger: !!out.ledger });
   out.sellPlans = {};
   if (p.sellPlans && typeof p.sellPlans === 'object') Object.entries(p.sellPlans).forEach(([k, v]) => { if (v && /^\d{4}-\d{2}$/.test(v.start)) out.sellPlans[k] = { start: v.start }; });
   return out;
@@ -80,6 +85,7 @@ function cleanStore(s) {
 let STORE = null;
 try { STORE = cleanStore(JSON.parse(localStorage.getItem(LS) || 'null')); } catch (e) { STORE = null; }
 if (!STORE) STORE = { current: 'p1', profiles: { p1: newProfile('我') } };
+if (CASH_DROPPED) try { localStorage.setItem(LS, JSON.stringify(STORE)); } catch (e) { /* 存不了就下次再移 */ }
 let P = STORE.profiles[STORE.current];
 let storageOk = true;
 function save() {
@@ -781,7 +787,7 @@ function viewAnalysis(A) {
   ${stressCard(A)}
   <section class="card" id="sec-compare">
     <div class="card-h"><h3>同类对比：哪只更好</h3><span class="sub">评分不看近1年涨幅</span></div>
-    <div class="seg" role="group" aria-label="选择类别">${C.cats.filter(c => c.k !== 'cash').map(c => `<button class="segbtn" type="button" data-cmp="${c.k}" aria-pressed="${cmpCat === c.k}">${c.n}</button>`).join('')}</div>
+    <div class="seg" role="group" aria-label="选择类别">${C.cats.filter(c => C.levels.some(l => l.target[c.k] > 0)).map(c => `<button class="segbtn" type="button" data-cmp="${c.k}" aria-pressed="${cmpCat === c.k}">${c.n}</button>`).join('')}</div>
     <div id="cmp">${compareTable(cmpCat)}</div>
   </section>
   </div>`;
@@ -955,6 +961,7 @@ async function findCode() {
   const inp = $('#code-input'); const code = (inp.value || '').replace(/\D/g, '');
   if (!/^\d{6}$/.test(code)) { toast('基金代码是 6 位数字'); inp.focus(); return; }
   if (!P.example && P.items.some(i => i.code === code)) { toast('这只已经在持仓里了，要改金额点它后面的“编辑”'); return; }
+  dropDraft('fa-', 'found-');
   if (code === '000198') { toast('余额宝不算进组合。应急钱留在支付宝里就行，不用录进来'); return; }
   if (FUND[code]) { found = { code, name: FUND[code].name || FUND[code].short, cat: FUND[code].cat, state: 'ok' }; showFound(); $('#fa-amt')?.focus(); return; }
   found = { code, state: 'busy' }; showFound();
@@ -1002,7 +1009,7 @@ function viewHoldings(A) {
   <section class="card">
     <div class="card-h"><h3>${esc(P.name)}的持仓</h3>${P.example ? '<span class="tag">示例</span>' : holdEdit ? unsavedTag : savedTag('hold')}</div>
     <p class="note">打开支付宝 → 理财 → 基金 → 持有，把每只基金的“金额”和“持有收益”抄过来。每月定投后，点那只基金后面的“编辑”更新一次。最多 ${max} 只。</p>
-    ${CASH_DROPPED ? '<div class="banner"><span>余额宝不再算进组合，已经从持仓里移出。它是你的应急钱，留在支付宝里就行，不用卖。</span></div>' : ''}
+    ${CASH_NOTE.has(P) ? `<div class="banner"><span>余额宝不再算进组合，已经从持仓里移出（${fmt(CASH_NOTE.get(P).amt)}）。它是你的应急钱，留在支付宝里就行，不用卖。${CASH_NOTE.get(P).ledger ? '年化记账里已经自动记了一笔同样金额的“转出”，所以收益不会被算错。' : ''}</span></div>` : ''}
     ${P.example ? '<div class="banner"><span>下面是示例数据，不是你的。添加第一只自己的基金时，示例会自动清掉。</span><button class="btn sm ghost" type="button" data-clear>清空示例</button></div>' : ''}
     ${P.items.length ? `<details class="fold" id="hold-fold" ${holdOpen || holdEdit || holdDel ? 'open' : ''}><summary><span>持仓清单</span><span class="sub n">${P.example ? '示例 · ' : ''}${P.items.length > max ? `${P.items.length} 只（上限 ${max} 只）` : `${P.items.length}/${max} 只`} · 合计 ${fmt(sum)}</span></summary>
       <div id="hold-list">${P.items.map(holdRow).join('')}</div></details>` : '<p class="muted pad">还没有持仓，从下面添加第一只基金。</p>'}
@@ -1043,7 +1050,7 @@ function viewMe() {
 
   <div class="grid2">
   <section class="card" id="me-quiz">
-    <div class="card-h"><h3>风险测评</h3>${P.risk ? `<span class="tag pick">${C.levels[lv.base].n}型 · ${P.risk.score} 分</span>` : '<span class="tag">未测评</span>'}</div>
+    <div class="card-h"><h3>风险测评</h3>${meEdit === 'quiz' ? unsavedTag : P.risk ? `<span class="tag pick">${C.levels[lv.base].n}型 · ${P.risk.score} 分</span>` : '<span class="tag">未测评</span>'}</div>
     ${P.risk && meEdit !== 'quiz' ? `<p>你的结果：<b>${C.levels[lv.base].n}型</b>，${P.risk.score} 分（满分 20）${P.risk.at && !isNaN(Date.parse(P.risk.at)) ? `，${new Date(P.risk.at).toLocaleDateString('zh-CN')} 测评` : ''}。${savedTag('quiz')}</p>
     <details class="fold"><summary><span>查看我的答案</span><span class="sub">${C.quiz.length} 题</span></summary>
       <ol class="answers">${C.quiz.map((q, qi) => `<li><span class="muted">${esc(q.q)}</span><b>${esc(q.a[ans[qi]] || '—')}</b></li>`).join('')}</ol></details>
@@ -1068,7 +1075,7 @@ function viewMe() {
   <div class="grid2">
   <section class="card">
     <div class="card-h"><h3>偏好</h3>${meEdit === 'prefs' ? unsavedTag : savedTag('prefs')}</div>
-    ${meEdit === 'prefs' ? prefsForm() : `${P.monthly ? '' : '<div class="banner"><span>还没填每月定投金额，系统算不出每只买多少。点下面的“编辑”填上。</span></div>'}
+    ${meEdit === 'prefs' ? prefsForm() : `${P.monthly ? '' : P.example ? `<div class="banner"><span>示例按每月 ${fmt(EXAMPLE_MONTHLY)} 算；填上你自己的金额后，按你的算。</span></div>` : '<div class="banner"><span>还没填每月定投金额，系统算不出每只买多少。点下面的“编辑偏好”填上。</span></div>'}
     <details class="fold" id="prefs-fold" ${prefsOpen ? 'open' : ''}><summary><span>我的偏好</span><span class="sub n">每月 ${P.monthly ? fmt(P.monthly) : '未填'} · ${P.prefs.day || 10} 号</span></summary>
       <dl class="kvlist">${prefRows().map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></details>
     <div class="btnrow"><button class="btn ghost" type="button" data-me="prefs">编辑偏好</button></div>`}
@@ -1128,7 +1135,7 @@ function prefsForm() {
   </form>`;
 }
 function meAction(act) {
-  if (act === 'name' || act === 'quiz' || act === 'prefs') { DRAFT = {}; meEdit = act; render(true); if (act === 'name') $('#pname')?.select(); else document.getElementById(act === 'quiz' ? 'me-quiz' : 'prefs-form')?.scrollIntoView({ block: 'start' }); }
+  if (act === 'name' || act === 'quiz' || act === 'prefs') { dropDraft('pname', 'q', 'pref-'); meEdit = act; render(true); if (act === 'name') $('#pname')?.select(); else document.getElementById(act === 'quiz' ? 'me-quiz' : 'prefs-form')?.scrollIntoView({ block: 'start' }); }
   else if (act === 'cancel') { meEdit = null; dropDraft('pname', 'q', 'pref-'); render(true); }
   else if (act === 'savename') { P.name = ($('#pname').value || '').trim().slice(0, 12) || '我'; meEdit = null; dropDraft('pname'); save(); render(true); toast(storageOk ? '已保存' : '浏览器禁止了本地存储，刷新后会丢失'); }
 }
@@ -1396,7 +1403,7 @@ function ledgerSection(A) {
   if (P.example) return '';
   if (!st) return `<section class="card" id="sec-ledger"><h3>记账（用来算年化）</h3><p class="note">还没开始记录。到“看板 → 年化目标”点“开始记录年化”。</p></section>`;
   const all = st.L.txns.slice().sort((a, b) => b.d.localeCompare(a.d) || b.id.localeCompare(a.id));
-  const row = t => `<div class="row static"><div class="t"><span class="n faint">${esc(t.d)}</span><span>${t.type === 'in' ? '从银行卡转入' : '转回银行卡'}${t.plan ? '<span class="tag">按计划</span>' : ''}</span></div><div class="r"><span class="n strong">${fmt(t.amt, 2)}</span> <button class="icon-btn sm" type="button" data-ledger="del" data-id="${esc(t.id)}" aria-label="删除这笔记录">${delTxn === t.id ? '确认' : '✕'}</button></div></div>`;
+  const row = t => `<div class="row static"><div class="t"><span class="n faint">${esc(t.d)}</span><span>${t.type === 'in' ? '从银行卡转入' : '转回银行卡'}${t.plan ? (/^\d{4}-\d{2}$/.test(t.plan) ? '<span class="tag">按计划</span>' : `<span class="tag">${esc(t.plan.slice(0, 12))}</span>`) : ''}</span></div><div class="r"><span class="n strong">${fmt(t.amt, 2)}</span> <button class="icon-btn sm" type="button" data-ledger="del" data-id="${esc(t.id)}" aria-label="删除这笔记录">${delTxn === t.id ? '确认' : '✕'}</button></div></div>`;
   return `<section class="card" id="sec-ledger">
     <div class="card-h"><h3>记账（用来算年化）</h3><span class="sub">起点 ${fullDate(st.L.start)} · ${fmt(st.L.startValue)}</span></div>
     <p class="note">只记从银行卡转进去买基金的钱，和卖出后转回银行卡的钱。基金之间换（卖一只、马上买另一只），钱没离开账户，不用记。记完后到上面更新各基金的金额。</p>
@@ -1636,9 +1643,11 @@ document.addEventListener('click', e => {
     const code = $('#add-code').value;
     if (code === '__other') {
       const nm = $('#other-name').value.trim(); if (!nm) { toast('先填基金名称'); $('#other-name').focus(); return; }
+      dropDraft('fa-', 'found-');
       found = { code: 'other-' + Date.now(), name: nm.slice(0, 40), cat: $('#other-cat').value, state: 'ok' };
     } else {
       if (!P.example && P.items.some(i => i.code === code)) { toast('这只已经在持仓里了，要改金额点它后面的“编辑”'); return; }
+      dropDraft('fa-', 'found-');
       found = { code, name: FUND[code].name || FUND[code].short, cat: FUND[code].cat, state: 'ok' };
     }
     showFound(); $('#fa-amt')?.focus();
