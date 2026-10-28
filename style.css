@@ -283,3 +283,10 @@ td .cellname .dot{flex:none}
 td .cellname a.plain{min-width:0;overflow-wrap:anywhere}
 td .cellname .tag{flex:none}
 @media (max-width:899px){td .cellname{min-height:44px}td .cellname a.plain{padding-block:12px}}
+.found{display:grid;gap:10px;background:var(--fill);border-radius:10px;padding:12px}
+.found .nm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pickfrom{border-top:.5px solid var(--line);padding-top:10px}
+.pickfrom summary{cursor:pointer;color:var(--brand);font-size:14px;min-height:32px;display:flex;align-items:center}
+.pickfrom[open] summary{margin-bottom:10px}
+.pickfrom>div+div{margin-top:10px}
+#code-input{font-family:var(--num);letter-spacing:.08em}

@@ -742,6 +742,70 @@ function loadLive(code) {
   });
 }
 
+const catOptions = sel => C.cats.map(c => `<option value="${c.k}" ${c.k === sel ? 'selected' : ''}>${c.n}${c.k === 'active' ? '（含行业主题）' : ''}</option>`).join('');
+/* 按基金名称猜类别，猜不准时用户可以改 */
+function guessCat(name) {
+  const n = name || '';
+  if (/货币|现金|余额|天天利|宝$/.test(n)) return 'cash';
+  if (/标普|纳斯达克|纳指|道琼斯|美国|全球|QDII|海外|恒生|港股|日经|德国|法国|越南|印度/.test(n)) return 'overseas';
+  if (/红利|股息|高息/.test(n)) return 'div';
+  if (/债|利率|信用|同业存单|政金/.test(n) && !/可转债|转债/.test(n)) return 'bond';
+  if (/沪深300|中证500|中证1000|A500|中证800|上证50|创业板|科创50|中证全指|宽基|MSCI中国/.test(n) && /指数|ETF|联接/.test(n)) return 'index';
+  return 'active';
+}
+/* 用基金代码查名称：先试天天基金实时估值接口，货币基金等没有估值的再试净值数据接口 */
+let lookupQueue = Promise.resolve();
+function loadScript(src, ms) {
+  return new Promise(resolve => { const s = document.createElement('script'); let done = false; const fin = ok => { if (done) return; done = true; s.remove(); resolve(ok); };
+    s.onload = () => fin(true); s.onerror = () => fin(false); setTimeout(() => fin(false), ms || 8000); s.src = src; document.head.appendChild(s); });
+}
+function lookupFund(code) {
+  const run = async () => {
+    const live = await fetchLive(code);
+    if (live && live.name) return { code, name: live.name };
+    window.fS_name = undefined; window.fS_code = undefined;
+    const ok = await loadScript(`https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`, 10000);
+    if (ok && window.fS_code === code && window.fS_name) return { code, name: String(window.fS_name) };
+    return null;
+  };
+  lookupQueue = lookupQueue.then(run, run);
+  return lookupQueue;
+}
+let found = null;
+function showFound() {
+  const box = $('#code-result'); if (!box) return;
+  if (!found) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  if (found.state === 'busy') { box.innerHTML = `<p class="note">正在查找 ${esc(found.code)}…</p>`; return; }
+  if (found.state === 'none') { box.innerHTML = `<p class="note">没有找到代码 ${esc(found.code)} 的基金。核对一下是不是 6 位数字；网络不好时可以过一会再试。</p>`; return; }
+  const f = FUND[found.code];
+  box.innerHTML = `<div class="found">
+    <div class="nm">${dot(found.cat)} <b>${esc(found.name)}</b><span class="sub n">${esc(found.code)}${f ? ` · 在推荐名单里${f.pick ? '（推荐组合）' : '（备选）'}` : ' · 不在选基名单里'}</span></div>
+    ${f ? '' : `<label class="field">属于哪一类（按名称猜的，不对就改）<select id="found-cat">${catOptions(found.cat)}</select></label>
+    <p class="note">名单外的基金，系统看不到它的费率和回撤，只能按类别给建议。</p>`}
+    <div class="btnrow"><button class="btn" type="button" id="found-add">添加到持仓</button><button class="btn ghost" type="button" id="found-cancel">取消</button></div></div>`;
+}
+async function findCode() {
+  const inp = $('#code-input'); const code = (inp.value || '').replace(/\D/g, '');
+  if (!/^\d{6}$/.test(code)) { toast('基金代码是 6 位数字'); inp.focus(); return; }
+  if (P.items.some(i => i.code === code)) { toast('这只已经在持仓里了'); return; }
+  if (FUND[code]) { found = { code, name: FUND[code].name || FUND[code].short, cat: FUND[code].cat, state: 'ok' }; showFound(); return; }
+  found = { code, state: 'busy' }; showFound();
+  const r = await lookupFund(code);
+  if (!found || found.code !== code) return;
+  found = r ? { code, name: r.name, cat: guessCat(r.name), state: 'ok' } : { code, state: 'none' };
+  showFound();
+}
+function addFound() {
+  if (!found || found.state !== 'ok') return;
+  if (P.example) P.items = [];
+  if (P.items.some(i => i.code === found.code)) { toast('这只已经在持仓里了'); return; }
+  const f = FUND[found.code];
+  P.items.push(f ? { code: found.code, amount: 0, profit: 0 } : { code: found.code, name: found.name.slice(0, 40), cat: ($('#found-cat') || {}).value || found.cat, amount: 0, profit: 0 });
+  const code = found.code; found = null;
+  touchPortfolio(); render(true); toast('已添加，填上金额和收益');
+  const el = document.getElementById('h-amt-' + code); if (el) el.focus();
+}
 function viewHoldings() {
   const opts = C.cats.map(c => `<optgroup label="${c.n}">${FUNDS.filter(f => f.cat === c.k).map(f => `<option value="${f.code}">${esc(f.short || f.name)} ${f.code}</option>`).join('')}</optgroup>`).join('') + '<option value="__other">其他基金（不在名单里）</option>';
   return `<div class="view">
@@ -750,18 +814,22 @@ function viewHoldings() {
     <p class="note">打开支付宝 → 理财 → 基金 → 持有，把每只基金的“金额”和“持有收益”抄过来。亏损填负数，比如 -350。每月定投后更新一次。</p>
     ${P.example ? '<div class="banner"><span>下面是示例数据。改任何一个数字，就开始保存你自己的持仓。</span><button class="btn sm ghost" type="button" data-clear>清空示例</button></div>' : ''}
     <div id="hold-list">${P.items.map((it, idx) => { const f = FUND[it.code]; return `<div class="hold-item">
-      <div class="nm">${f ? dot(f.cat) + ' ' + esc(f.short || f.name) : dot(CAT[it.cat] ? it.cat : 'active') + ' ' + esc(it.name || '其他基金')}<span class="sub n">${f ? f.code : '不在名单里 · ' + esc((CAT[it.cat] || CAT.active).n)}</span></div>
+      <div class="nm">${f ? dot(f.cat) + ' ' + esc(f.short || f.name) : dot(CAT[it.cat] ? it.cat : 'active') + ' ' + esc(it.name || '其他基金')}<span class="sub n">${f ? f.code : (/^\d{6}$/.test(it.code) ? esc(it.code) + ' · ' : '') + '不在名单里 · ' + esc((CAT[it.cat] || CAT.active).n)}</span></div>
  <label class="field">金额（元）<input type="number" inputmode="decimal" id="h-amt-${esc(it.code)}" data-code="${esc(it.code)}" data-f="amount" value="${it.amount ?? ''}"></label>
       <label class="field">持有收益（元）<input type="number" inputmode="decimal" id="h-pro-${esc(it.code)}" data-code="${esc(it.code)}" data-f="profit" value="${it.profit ?? ''}"></label>
       <button class="icon-btn" type="button" data-del="${esc(it.code)}" aria-label="删除 ${esc(f ? f.short || f.name : it.name)}">✕</button></div>`; }).join('') || '<p class="muted pad">还没有持仓，从下面添加第一只基金。</p>'}</div>
   </section>
   <section class="card">
     <h3>添加基金</h3>
-    <div class="addrow"><label class="field">选择基金<select id="add-code">${opts}</select></label><button class="btn" type="button" id="add-btn">添加</button></div>
-    <div id="other-box" class="twocol" hidden>
-      <label class="field">基金名称<input id="other-name" type="text" placeholder="比如 某某医药ETF联接" class="txt"></label>
-      <label class="field">属于哪一类<select id="other-cat">${C.cats.map(c => `<option value="${c.k}" ${c.k === 'active' ? 'selected' : ''}>${c.n}${c.k === 'active' ? '（含行业主题）' : ''}</option>`).join('')}</select></label>
-    </div>
+    <div class="addrow"><label class="field">输入基金代码（6 位数字，支付宝基金详情页名称下面那串数字）<input id="code-input" type="text" inputmode="numeric" maxlength="6" placeholder="比如 110020" autocomplete="off"></label><button class="btn" type="button" id="code-find">查找</button></div>
+    <div id="code-result" hidden></div>
+    <details class="pickfrom"><summary>或者从推荐名单里选</summary>
+      <div class="addrow"><label class="field">选择基金<select id="add-code">${opts}</select></label><button class="btn ghost" type="button" id="add-btn">添加</button></div>
+      <div id="other-box" class="twocol" hidden>
+        <label class="field">基金名称<input id="other-name" type="text" placeholder="比如 某某医药ETF联接" class="txt"></label>
+        <label class="field">属于哪一类<select id="other-cat">${catOptions('active')}</select></label>
+      </div>
+    </details>
   </section>
   </div>`;
 }
@@ -899,6 +967,13 @@ document.addEventListener('click', e => {
   else if ('import' in d) $('#import-file').click();
 });
 function bindHoldings() {
+  const ci = $('#code-input');
+  ci.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); findCode(); } });
+  ci.addEventListener('input', () => { ci.value = ci.value.replace(/\D/g, '').slice(0, 6); });
+  $('#code-find').addEventListener('click', findCode);
+  $('#code-result').addEventListener('click', e => { if (e.target.id === 'found-add') addFound(); else if (e.target.id === 'found-cancel') { found = null; showFound(); ci.value = ''; } });
+  $('#code-result').addEventListener('change', e => { if (e.target.id === 'found-cat' && found) found.cat = e.target.value; });
+  showFound();
   const sel = $('#add-code'), box = $('#other-box');
   sel.addEventListener('change', () => { box.hidden = sel.value !== '__other'; });
   document.querySelectorAll('#hold-list input').forEach(inp => {
