@@ -239,8 +239,12 @@ function sliceSell(code, amount) {
 const KEYDATA = ['fee', 'ret3y', 'dd'];
 /* 限购：一个月按约 20 个交易日算，每天最多买 buyCap 元。暂停申购又没有限额的，当作这个月买不了 */
 const TRADE_DAYS = 20;
-const monthCap = f => f && f.buyCap > 0 ? f.buyCap * TRADE_DAYS : (f && f.buyStatus === '暂停申购' && !f.buyCap ? 0 : Infinity);
-const capNote = (f, amt) => f && f.buyCap > 0 && amt > f.buyCap ? `每天最多买 ${fmt(f.buyCap)}，分 ${Math.ceil(amt / f.buyCap)} 天买，或在支付宝设“每日定投” ${fmt(Math.min(f.buyCap, Math.ceil(amt / TRADE_DAYS)))}` : '';
+const BIG_CAP = 10000;   // 每天能买 1 万以上的“限大额”，对正常定投没有影响
+const monthCap = f => f && f.buyCap > 0 ? (f.buyCap >= BIG_CAP ? Infinity : f.buyCap * TRADE_DAYS) : (f && f.buyStatus === '暂停申购' ? 0 : Infinity);
+const tightCap = f => f && f.buyCap > 0 && f.buyCap < BIG_CAP;
+const dailyAmt = (f, total) => Math.min(f.buyCap, Math.ceil(total / TRADE_DAYS));
+const capNote = (f, amt) => tightCap(f) && amt > f.buyCap ? `每天最多买 ${fmt(f.buyCap)}：在支付宝设“每日定投” ${fmt(dailyAmt(f, amt))}，一个月大约买满 ${fmt(dailyAmt(f, amt) * TRADE_DAYS)}` : '';
+const DAILY_HOWTO = '设置方法：支付宝搜基金代码 → 进基金页点“定投” → 频率选“每日” → 填金额。只在交易日扣款，周末和节假日不扣，一个月大约扣 20 次，设好就不用管。';
 function analyze() {
   const T = targets(); const R = C.rules;
   const items = P.items.filter(i => i && (+i.amount || 0) > 0).map(i => {
@@ -277,7 +281,6 @@ function analyze() {
   const over = k => total > 0 && dev2[k] >= R.rebalanceBand;
   // 占比不够、而且推荐基金现在能买（估值不是“很贵”）的类别：卖出的钱只往这里去
   const under = (exclude) => C.cats.filter(x => x.k !== 'cash' && x.k !== exclude && T[x.k] > 0 && dev2[x.k] < 0 && picksOf(x.k).some(p => sigOf(x.k, p).m > 0)).sort((x, y) => dev2[x.k] - dev2[y.k]);
-  const capacity = under(null).reduce((a, x) => a + (-dev2[x.k] / 100 * total), 0);
   const bestOf = (k, f) => { const ps = picksOf(k); const same = f ? ps.find(p => groupOf(p) === groupOf(f)) : null; if (same) return same; if (ps.length) return ps[0]; return k === 'active' ? picksOf('index')[0] : null; };
 
   // 第二步：本月定投计划（只买推荐基金）。超配不买，估值贵少买；少买的钱进余额宝
@@ -293,13 +296,13 @@ function analyze() {
       else if (c.eq && dev2[c.k] <= -R.catchUpBand && m >= 1 && total > 0 && !sig.conflict) { m += 0.5; note = '低配补仓'; }
       let amt = b * m;
       // 限购：一个月买不完的部分放进余额宝
-      const mc = monthCap(p);
-      if (amt > mc) { note = mc === 0 ? '暂停申购' : '限购'; amt = mc; }
+      const mc = monthCap(p); let capped = 0;
+      if (amt > mc) { capped = amt - mc; note = mc === 0 ? '暂停申购' : '限购'; amt = mc; }
       if (amt < b) parked += b - amt; else bonus += amt - b;
-      plan.push({ fund: p, cat: c.k, base: b, amt, m: b ? +(amt / b).toFixed(2) : m, sig, note, cap: capNote(p, amt) });
+      plan.push({ fund: p, cat: c.k, base: b, amt, m, sig, note, capped });
     });
   });
-  plan.filter(r => r.note === '限购' || r.note === '暂停申购').forEach(r => parkedWhy.push(`${r.fund.short || r.fund.name}${r.note === '暂停申购' ? '暂停申购' : `限购（${r.fund.limit}）`}，买不完的部分`));
+  plan.filter(r => r.capped >= 1).forEach(r => parkedWhy.push(r.note === '暂停申购' ? `${r.fund.short || r.fund.name}暂停申购，这个月该买的 ${fmt(r.capped)} 先不买` : `${r.fund.short || r.fund.name}每天只能买 ${fmt(r.fund.buyCap)}，一个月最多 ${fmt(monthCap(r.fund))}，多出来的 ${fmt(r.capped)} 先不买。这不是你做错了什么，是基金公司额度用完了，以后放开了再补`));
   // 便宜月份多买的钱从余额宝里出，但不能超过余额宝里实际有的钱：不够时先砍“低配补仓”，再按比例砍其他多买
   const cashFund = picksOf('cash')[0], cashBase = monthly * T.cash / 100, cashOver = over('cash');
   const avail = cashBase + parked + byCat.cash;
@@ -334,6 +337,8 @@ function analyze() {
     else if (i.exit === 'unlisted') a = sell('分批卖出', ['不在选基名单里，看不到它的费率、回撤和经理数据，没法判断好坏。', `${i.cat === 'active' ? '行业基金波动大' : `${c.n}已经超配`}${pp < 0 ? `。现在亏 ${Math.abs(pp).toFixed(0)}%，但不要因为亏了就一直拿着等回本` : ''}。`], `钱放进${dest}。`);
     else if (i.exit === 'noActive') a = sell('分批卖出', ['你在偏好里选了“不买主动基金”。'], `钱放进${dest}。`);
     else if (!f) a = { k: 'swap', t: '考虑换掉', amt: 0, why: [`不在选基名单里。对比一下同类推荐的 ${best ? best.short || best.name : '基金'} 的费率和回撤，差得多就换。`] };
+    else if (!f.pick && best && groupOf(best) === groupOf(f) && isFinite(monthCap(best)) && best.score - f.score >= R.swapScoreGap)
+      a = { k: 'hold', t: '持有', amt: 0, why: [`推荐的 ${best.short || best.name} 更好，但它现在限购（每天最多 ${fmt(best.buyCap || 0)}），换不过去。这只先拿着，跟踪的是同一个指数，效果差不多；新钱按“本月定投计划”买推荐的那只。`] };
     else if (!f.pick && best && best.score - f.score >= R.swapScoreGap && groupOf(best) === groupOf(f) && !KEYDATA.some(k => (f.missing || []).includes(MNAME[k]) || (best.missing || []).includes(MNAME[k])))
       a = sell('换成更好的', [`跟踪同一个指数的基金里，它的综合评分 ${f.score} 分，推荐的 ${best.short || best.name} 是 ${best.score} 分（看费率、规模、3年收益和回撤，不看短期涨幅）。`], `卖出的钱买 ${best.short || best.name}。持有不满 7 天卖出要交 1.5% 赎回费。`);
     else if (c.eq && sig.m === 0 && pp >= R.takeProfitPct) {
@@ -351,7 +356,7 @@ function analyze() {
       a = { k: 'stop', t: '暂停买入', amt: 0, why: [`估值${sig.t}（${valText(i.cat, f)}），拿着不动，这个月不再买。`, pp < R.takeProfitPct ? (pp < 0 ? `目前亏 ${Math.abs(pp).toFixed(0)}%，不要在贵的时候加仓摊低成本，拿着等。` : `目前赚 ${pp.toFixed(0)}%，没到 ${R.takeProfitPct}% 的止盈线，不用卖。`) : ''] };
     } else {
       const p = planFor(i.code), low = dev2[i.cat] <= -R.rebalanceBand;
-      if (p && Math.round(p.amt) >= 1 && i.cat !== 'cash') a = { k: 'buy', t: low ? '加仓' : '按计划定投', amt: Math.round(p.amt), why: [low ? `${c.n}占 ${w2[i.cat].toFixed(0)}%，比目标 ${T[i.cat]}% 少 ${Math.abs(dev2[i.cat]).toFixed(0)} 个百分点，估值${sig.t}。` : `比例正常，估值${sig.t}。`, `本月买入 ${fmt(p.amt)}${p.m !== 1 ? `（平时的 ${p.m} 倍）` : ''}。${p.cap ? `限购：${p.cap}。` : ''}`] };
+      if (p && Math.round(p.amt) >= 1 && i.cat !== 'cash') a = { k: 'buy', t: low ? '加仓' : '按计划定投', amt: Math.round(p.amt), why: [low ? `${c.n}占 ${w2[i.cat].toFixed(0)}%，比目标 ${T[i.cat]}% 少 ${Math.abs(dev2[i.cat]).toFixed(0)} 个百分点，估值${sig.t}。` : `比例正常，估值${sig.t}。`, `本月买入 ${fmt(p.amt)}${p.m !== 1 && p.note !== '限购' ? `（平时的 ${p.m} 倍）` : ''}。${tightCap(f) ? `这只限购，每天最多买 ${fmt(f.buyCap)}，设成“每日定投”最省事。` : ''}`] };
       else if (i.cat === 'cash') a = { k: 'hold', t: '持有', amt: 0, why: [extra > 0 ? `本月便宜的类别要多买，从余额宝里取 ${fmt(extra)}。` : p && Math.round(p.amt) >= 1 ? `本月存入 ${fmt(p.amt)}。` : '比例正常，不用操作。'] };
 
       else a = { k: 'hold', t: '持有', amt: 0, why: [f.pick ? '比例正常，不用操作。' : `不是推荐基金，但和推荐的 ${best ? best.short || best.name : ''} 差距不大，可以继续拿着，新钱买推荐的那只。`] };
@@ -365,6 +370,11 @@ function analyze() {
   const sellFreed = adv.filter(x => x.adv.k === 'sell').reduce((a, x) => a + x.adv.amt, 0);
   adv.filter(x => x.adv.t === '转出补仓').forEach(x => {
     // 不超过：超出部分的三分之一、能买进去的空间、余额宝余额扣掉本月定投要取的部分
+    // 能买进去的空间：每个缺的类别，取“缺多少”和“推荐基金扣掉本月定投后还能买多少”（限购）中较小的
+    const capacity = under(null).reduce((a, c2) => {
+      const roomCat = picksOf(c2.k).filter(p => sigOf(c2.k, p).m > 0).reduce((r, p) => r + Math.max(0, monthCap(p) - ((planFor(p.code) || {}).amt || 0)), 0);
+      return a + Math.min(-dev2[c2.k] / 100 * total, roomCat);
+    }, 0);
     const room = Math.max(0, capacity - sellFreed), amt = Math.round(Math.max(0, Math.min(x.adv.excess / R.sellMonths, room, x.amount - extra)));
     if (amt < 1) x.adv = extra >= 1
       ? { k: 'move', t: '取出定投', amt: Math.round(Math.min(extra, x.amount)), why: [`本月定投多买的部分从余额宝里取 ${fmt(Math.min(extra, x.amount))}。`, '余额宝比目标多，但现在占比不够的类别要么估值很贵、要么已经补满，剩下的先放着。'] }
@@ -375,20 +385,30 @@ function analyze() {
   });
   // 第四步：本月卖出、转出的钱怎么买 —— 按各类缺多少分给推荐基金；估值很贵的类别不买，剩下的进余额宝
   const freed = adv.filter(x => x.adv.k === 'sell' || x.adv.t === '转出补仓').reduce((a, x) => a + x.adv.amt - (x.adv.t === '转出补仓' ? Math.round(extra) : 0), 0);
-  const reinvest = []; let freedLeft = freed;
+  const reinvest = [], capHit = []; let freedLeft = freed;
   if (freed > 0) {
-    const cands = under(null).map(x => ({ c: x, need: -dev2[x.k] / 100 * total, ps: picksOf(x.k).filter(p => sigOf(x.k, p).m > 0) })).filter(x => x.ps.length && x.need > 0);
-    // 余额宝本身转出的钱不再放回余额宝：表里“分不完进余额宝”的只会是卖出基金的钱
-    const needSum = cands.reduce((a, x) => a + x.need, 0);
-    cands.forEach(x => {
-      const share = Math.min(x.need, freed * x.need / needSum);
-      const sp = x.ps.reduce((a, p) => a + (p.split || 1), 0);   // 只在能买的推荐基金之间分（比如纳指很贵时，海外的钱全给标普）
-      x.ps.forEach(p => {
-        const room = Math.max(0, monthCap(p) - ((planFor(p.code) || {}).amt || 0));   // 限购基金扣掉本月定投后还能买多少
-        const v = Math.min(room, share * (p.split || 1) / sp);
-        if (v >= 1) { reinvest.push({ fund: p, cat: x.c.k, amt: v, cap: capNote(p, v + ((planFor(p.code) || {}).amt || 0)) }); freedLeft -= v; }
+    // 按缺口比例分给各类，限购基金买满后，多出来的再分给还有空间的类别（最多分 6 轮）
+    const cands = under(null).map(x => ({ c: x, need: -dev2[x.k] / 100 * total, ps: picksOf(x.k).filter(p => sigOf(x.k, p).m > 0).map(p => ({ p, room: Math.max(0, monthCap(p) - ((planFor(p.code) || {}).amt || 0)), got: 0 })), got: 0 }))
+      .filter(x => x.ps.length && x.need > 0);
+    let left = freed;
+    for (let round = 0; round < 6 && left >= 1; round++) {
+      const open = cands.filter(x => x.got < x.need - 0.5 && x.ps.some(q => q.got < q.room - 0.5)); if (!open.length) break;
+      const needSum = open.reduce((a, x) => a + (x.need - x.got), 0), pot = left;
+      open.forEach(x => {
+        let give = Math.min(x.need - x.got, pot * (x.need - x.got) / needSum);
+        for (let r2 = 0; r2 < 3 && give >= 0.5; r2++) {   // 类里按 split 分，限购的买满后给同类其他基金
+          const qs = x.ps.filter(q => q.got < q.room - 0.5); if (!qs.length) break;
+          const sp = qs.reduce((a, q) => a + (q.p.split || 1), 0); let used = 0;
+          qs.forEach(q => { const v = Math.min(q.room - q.got, give * (q.p.split || 1) / sp); q.got += v; used += v; });
+          x.got += used; left -= used; give -= used;
+        }
       });
-    });
+    }
+    cands.forEach(x => x.ps.forEach(q => {
+      if (q.got >= 1) reinvest.push({ fund: q.p, cat: x.c.k, amt: q.got });
+      if (q.room < Infinity && q.got >= q.room - 0.5 && x.got < x.need - 0.5) capHit.push(q.p.short || q.p.name);
+    }));
+    freedLeft = left;
     freedLeft = Math.max(0, freedLeft);
   }
   const swaps = adv.filter(x => x.adv.t === '换成更好的');   // 换基的钱直接买同类推荐，不在上面分配
@@ -402,13 +422,15 @@ function analyze() {
     else if (over(f.cat)) a = { k: 'hold', t: '先不买', amt: 0, why: [`${CAT[f.cat].n}已经超配，本月不买。等比例回到目标附近再开始定投。`] };
     else if (!p || Math.round(p.amt) < 1) a = { k: 'stop', t: '先不买', amt: 0, why: [`估值${sig.t}（${valText(f.cat, f)}）。等估值回落再开始定投，这部分钱先放余额宝。`] };
     else a = { k: 'buy', t: '开始买入', amt: Math.round(p.amt), why: [`组合里还没有这只${heldSame ? '' : `，也还没有${CAT[f.cat].n}这一类`}。估值${sig.t}，从本月开始定投 ${fmt(p.amt)}。`] };
-    if (a.k === 'buy' && p && p.cap) a.why.push(`限购：${p.cap}。`);
-    else if (p && p.note === '限购' && a.k === 'buy') a.why.push(`限购：${f.limit}，这个月最多买 ${fmt(p.amt)}，买不满的部分留在余额宝。`);
+    if (a.k === 'buy' && tightCap(f)) a.why.push(`这只限购，每天最多买 ${fmt(f.buyCap)}。设成支付宝“每日定投”最省事，金额看“本月定投计划”。`);
     return { code: f.code, fund: f, cat: f.cat, name: f.name, amount: 0, profit: 0, pp: 0, adv: a, notHeld: true };
   });
   const order = { sell: 0, swap: 1, move: 2, buy: 2, stop: 3, wait: 3, hold: 4 };
   const advice = adv.concat(missing).sort((x, y) => order[x.adv.k] - order[y.adv.k] || y.amount - x.amount);
-  return { T, items, zeroItems, total, profit, byCat, pByCat, w, dev, w2, dev2, eqW, expRet, expDd, curDd, plan, parked, bonus, parkedWhy, cashOver, bank, extra, planTotal, monthly, advice, sched, freed, reinvest, freedLeft, swaps };
+  // 每只限购基金本月一共要买多少（定投 + 卖出再买），只给一个每日定投金额
+  const capTotal = {};
+  plan.concat(reinvest).forEach(r => { if (r.fund && tightCap(r.fund) && r.amt >= 1) capTotal[r.fund.code] = (capTotal[r.fund.code] || 0) + r.amt; });
+  return { T, items, zeroItems, total, profit, byCat, pByCat, w, dev, w2, dev2, eqW, expRet, expDd, curDd, plan, parked, bonus, parkedWhy, cashOver, bank, extra, planTotal, monthly, advice, sched, freed, reinvest, freedLeft, swaps, capTotal, capHit };
 }
 /* 记录分批卖出的开始月份；不再需要卖的清掉 */
 function syncSellPlans(A) {
@@ -528,12 +550,24 @@ function dataAge() {
   let wd = 0; for (let t = new Date(d); t.setDate(t.getDate() + 1) && t <= new Date();) { const k = t.getDay(); if (k !== 0 && k !== 6) wd++; }
   return wd > (C.rules.staleWeekdays || 5) ? `<div class="banner warn"><span>净值和估值数据停在 ${cnDate(nd)}，已经 ${wd} 个工作日没更新。如果不是长假，可能是自动更新出了问题，操作前请在天天基金核对。</span></div>` : '';
 }
+/* 限购基金只给一个每日定投金额：同时出现在定投计划和“卖出的钱怎么买”时，只在后一张表写合计 */
+function capLine(A, f, where) {
+  if (!f || !tightCap(f)) return '';
+  const tot = A.capTotal[f.code] || 0; if (tot < 1) return '';
+  const inRe = A.reinvest.some(r => r.fund.code === f.code && r.amt >= 1), planAmt = ((A.plan.find(p => p.fund.code === f.code) || {}).amt) || 0;
+  if (where === 'plan' && inRe) return `<div class="sub">限购，每日定投金额见下面“本月卖出的钱怎么买”</div>`;
+  if (tot <= f.buyCap) return `<div class="sub">每天最多买 ${fmt(f.buyCap)}，一次买完就行</div>`;
+  const d = dailyAmt(f, tot);
+  return `<div class="sub">${where === 'reinvest' && planAmt >= 1 ? `本月合计要买 ${fmt(tot)}（已含定投计划的 ${fmt(planAmt)}）。` : ''}在支付宝设“每日定投” ${fmt(d)} 就行，一个月大约买 ${fmt(d * TRADE_DAYS)}</div>`;
+}
 function planNote(A) {
   const out = [];
   if (A.extra > 0) out.push(`估值便宜的类别多买，比平时多出 ${fmt(A.extra)}，从余额宝里取。`);
   if (A.bank > 0) out.push(`估值贵或已超配的类别少买了，余额宝也已经够多，这个月少投的 ${fmt(A.bank)} 留在银行卡里。`);
   else if (A.parked > A.bonus && !A.cashOver) out.push(`估值贵或已超配的类别少买的 ${fmt(A.parked - A.bonus)}，存进余额宝，等便宜时再用。`);
-  if (A.parkedWhy.length) out.push(A.parkedWhy.join('，') + '，这部分钱先放余额宝。');
+  if (A.parkedWhy.length) out.push(A.parkedWhy.join('。') + `。这些钱和上面少买的钱放在一起${A.cashOver ? '（留在银行卡）' : '（存进余额宝）'}。`);
+  if (A.plan.some(p => p.cat === 'overseas' && p.note === '限购')) out.push('目前海外基金额度很紧（每天 10–100 元），海外比例会长期低于目标，这是正常的，不用想办法绕开，也不用换高价渠道。股票部分其他类别照常买。');
+  if (A.plan.some(p => tightCap(p.fund) && p.amt >= 1)) out.push(DAILY_HOWTO);
   if (A.freed > 0) out.push(`另外本月卖出、转出共 ${fmt(A.freed)}，怎么买见“买卖分析”。`);
   return out.map(t => `<p class="note">${t}</p>`).join('');
 }
@@ -643,8 +677,8 @@ function viewAnalysis(A) {
   ${A.freed > 0 ? `<section class="card" id="sec-reinvest">
     <div class="card-h"><h3>本月卖出的钱怎么买</h3><span class="sub">共 ${fmt(A.freed)}</span></div>
     <div class="tbox"><table><thead><tr><th>买入</th><th>原因</th><th class="r">金额</th></tr></thead><tbody>
-      ${A.reinvest.filter(r => r.amt >= 1).map(r => `<tr><td><span class="cellname">${dot(r.cat)}<a href="#fund-${r.fund.code}" class="plain">${esc(r.fund.short || r.fund.name)}</a></span>${r.cap ? `<div class="sub">${esc(r.cap)}（和本月定投合计）</div>` : ''}</td><td class="muted">${CAT[r.cat].n}比目标少 ${Math.abs(A.dev2[r.cat]).toFixed(0)} 个点</td><td class="r strong">${fmt(r.amt)}</td></tr>`).join('')}
-      ${A.freedLeft >= 1 ? `<tr><td><span class="cellname">${dot('cash')}<span>余额宝</span></span></td><td class="muted">${A.cashOver ? '暂时停放：' : ''}其他类别不缺，或者估值太贵，等能买的时候再用</td><td class="r strong">${fmt(A.freedLeft)}</td></tr>` : ''}
+      ${A.reinvest.filter(r => r.amt >= 1).map(r => `<tr><td><span class="cellname">${dot(r.cat)}<a href="#fund-${r.fund.code}" class="plain">${esc(r.fund.short || r.fund.name)}</a></span>${capLine(A, r.fund, 'reinvest')}</td><td class="muted">${CAT[r.cat].n}比目标少 ${Math.abs(A.dev2[r.cat]).toFixed(0)} 个点</td><td class="r strong">${fmt(r.amt)}</td></tr>`).join('')}
+      ${A.freedLeft >= 1 ? `<tr><td><span class="cellname">${dot('cash')}<span>余额宝</span></span></td><td class="muted">${A.cashOver ? '暂时停放：' : ''}${A.capHit.length ? `${esc(A.capHit.join('、'))}本月额度已用完；` : ''}其他类别不缺，或者估值太贵，等能买的时候再用</td><td class="r strong">${fmt(A.freedLeft)}</td></tr>` : ''}
       <tr><td colspan="2"><b>合计</b></td><td class="r strong">${fmt(A.freed)}</td></tr></tbody></table></div>
     <p class="note">按各类比目标少多少来分，缺得多的多买；估值“很贵”的类别不买。这笔钱和每月定投分开算。${A.swaps.length ? '换基的钱直接买同类推荐基金，不在这张表里。' : ''}</p>
   </section>` : ''}
@@ -652,7 +686,7 @@ function viewAnalysis(A) {
   <section class="card" id="sec-plan">
     <div class="card-h"><h3>本月定投计划</h3><span class="sub">每月基础 ${fmt(A.monthly)}</span></div>
     <div class="tbox"><table><thead><tr><th>基金</th><th>估值信号</th><th class="r">倍数</th><th class="r">金额</th></tr></thead><tbody>
-      ${A.plan.map(p => `<tr><td><span class="cellname">${dot(p.cat)}<a href="#fund-${p.fund.code}" class="plain">${esc(p.fund.short || p.fund.name)}</a>${p.note ? `<span class="tag">${esc(p.note)}</span>` : ''}</span>${p.cap ? `<div class="sub">${esc(p.cap)}</div>` : ''}</td><td>${p.note === '已超配' ? '<span class="act hold">不买</span>' : sigChip(p.sig)}</td><td class="r">${p.cat === 'cash' ? (A.extra > 0 ? `取出 ${fmt(A.extra)}` : '净额') : p.m + '×'}</td><td class="r strong">${fmt(p.amt)}</td></tr>`).join('')}
+      ${A.plan.map(p => `<tr><td><span class="cellname">${dot(p.cat)}<a href="#fund-${p.fund.code}" class="plain">${esc(p.fund.short || p.fund.name)}</a>${p.note ? `<span class="tag">${esc(p.note)}</span>` : ''}</span>${capLine(A, p.fund, 'plan')}</td><td>${p.note === '已超配' ? '<span class="act hold">不买</span>' : sigChip(p.sig)}</td><td class="r">${p.cat === 'cash' ? (A.extra > 0 ? `取出 ${fmt(A.extra)}` : '净额') : p.note === '限购' ? '买满' : p.note === '暂停申购' ? '暂停' : p.m + '×'}</td><td class="r strong">${fmt(p.amt)}</td></tr>`).join('')}
       <tr><td colspan="3"><b>合计</b></td><td class="r strong">${fmt(A.planTotal)}</td></tr></tbody></table></div>
     ${P.ledger && !P.example ? `<div class="btnrow"><button class="btn ghost" type="button" data-ledger="plan">在支付宝买完了，按计划一键记账</button></div>` : ''}
     ${planNote(A)}<p class="note">规则：便宜的类别多买，贵的少买或暂停，已经超配的本月不买；某类比目标少 ${C.rules.catchUpBand} 个点以上且不贵时，额外多买 0.5 倍。余额宝一行是净额。</p>
@@ -695,7 +729,7 @@ function compareTable(k) {
   const note = k === 'overseas' ? '海外按跟踪的指数分组打分：标普500 只和标普500 比，纳指100 只和纳指100 比。' : '';
   return `<div class="tbox"><table><thead><tr><th>基金</th><th style="min-width:120px">评分</th><th class="r">年费率</th><th class="r">规模(亿)</th><th class="r">近3年</th><th class="r">最大回撤</th></tr></thead><tbody>
     ${fs.map(f => `<tr class="${f.pick ? 'best' : ''}"><td><a href="#fund-${f.code}" class="plain strong">${esc(f.short || f.name)}</a> ${f.pick ? '<span class="tag pick">推荐</span>' : ''}<div class="sub n">${f.code}</div></td><td>${scoreBar(f.score)}</td><td class="r">${totalFee(f) == null ? '—' : totalFee(f).toFixed(2) + '%'}</td><td class="r">${f.scaleYi == null ? '—' : f.scaleYi.toFixed(0)}</td><td class="r ${cls(f.ret3y)}">${pct(f.ret3y)}</td><td class="r">${f.maxDd3y == null ? '—' : '−' + Math.abs(f.maxDd3y).toFixed(1) + '%'}</td></tr>`).join('')}
-  </tbody></table></div><p class="note">${note}评分权重：${wk}。缺数据的项按中间分计。推荐基金不一定分数最高，理由见基金详情里的“我的判断”。</p>`;
+  </tbody></table></div><p class="note">${note}年费率＝管理费＋托管费＋销售服务费，每天从净值里扣，不用另付。A 类买入时收一次申购费、没有销售服务费，C 类相反；打算拿一年以上选 A 更省。</p><p class="note">评分权重：${wk}。缺数据的项按中间分计。推荐基金不一定分数最高，理由见基金详情里的“我的判断”。</p>`;
 }
 
 let fundFilter = 'all';
@@ -759,7 +793,7 @@ function viewFund(code, A) {
       ${hold ? `<div class="why">${hold.adv.why.map(w => `<span>${esc(w)}</span>`).join('')}</div>${hold.adv.amt ? `<div class="bigamt">${amtLine(hold.adv)}</div>` : ''}`
         : `<p>你没有持有它，它也不在推荐组合里。${sig.m === 0 ? '现在估值贵，不建议买。' : '要买同类的话，优先买推荐的那只。'}</p>`}
       ${f.cat === 'index' || f.cat === 'active' ? (() => { const own = f.cat === 'index' && f.val && SIGV[f.val] && M[f.val] ? M[f.val].pePct10y : idxPct; return `<div class="temp"><span>${esc(valText(f.cat, f))}</span>${sigChip(sig)}</div>${gaugeHTML(own)}`; })() : f.cat === 'div' ? `<div class="temp"><span>息差 ${spread == null ? '—' : spread.toFixed(2) + ' 个点'}</span>${sigChip(sig)}</div>` : f.cat === 'overseas' ? `<div class="temp"><span>${valText('overseas', f)}</span>${sigChip(sig)}</div>${gaugeHTML(M[f.val] && M[f.val].pePct10y)}` : ''}
-      ${f.limit ? `<p class="note">限购：${esc(f.limit)}（天天基金费率页，${esc(f.feeDate || '')} 查到）。一个月按 ${TRADE_DAYS} 个交易日算，最多买约 ${fmt(monthCap(f))}；买不进去的钱先放余额宝。在支付宝设成“每日定投”最省事。</p>` : ''}
+      ${f.buyCap >= BIG_CAP ? `<p class="note">每天最多买 ${fmt(f.buyCap)}，正常定投不受影响。</p>` : tightCap(f) ? `<p class="note">限购：每天最多买 ${fmt(f.buyCap)}（天天基金，${esc(f.feeDate || '')} 查到），一个月大约最多 ${fmt(monthCap(f))}，买不进去的钱先不买。${DAILY_HOWTO}</p>` : f.buyStatus === '暂停申购' ? '<p class="note">这只现在暂停申购，买不了。等基金公司恢复，每天的数据更新会自动发现。</p>' : ''}
     </section>
   </div>
   <div class="grid2">

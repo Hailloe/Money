@@ -172,10 +172,15 @@ def fetch_fees(code):
             out[key] = round(float(m.group(1)), 4)
         elif key == 'salesFee' and re.search(label + r'\s*(---|--|-)', text):
             out[key] = 0.0
-    status = re.search(r'(暂停申购|暂停大额申购|限大额|开放申购|场内交易|认购期)', text)
-    cap = re.search(r'(?:单日累计购买上限|单日累计申购上限|单个账户单日累计申购.*?不超过|日累计申购限额)\s*([\d,.]+)\s*(万元|元)', text)
+    # 只在“交易状态”后面一小段里找状态和限额，避免把页面别处（比如旧公告）的数字当成现在的限购
+    i = text.find('交易状态')
+    zone = text[i:i + 120] if i >= 0 else ''
+    status = re.search(r'(暂停申购|暂停大额申购|限大额|开放申购|场内交易|认购期)', zone)
+    cap = re.search(r'(?:单日累计购买上限|单日累计申购上限|单个账户单日累计申购.*?不超过|日累计申购限额)\s*([\d,.]+)\s*(万元|元)', zone)
     if status:
         out['buyStatus'] = status.group(1)
+        if out['buyStatus'] == '暂停申购' and cap:
+            out['buyStatus'] = '限额申购'   # 天天基金写“暂停申购（单日上限 10 元）”，其实是每天还能买一点
     if cap:
         amt = float(cap.group(1).replace(',', '')) * (10000 if cap.group(2) == '万元' else 1)
         out['buyCap'] = amt
@@ -312,13 +317,20 @@ def main():
         try:
             fees, snip = fetch_fees(code)
             status[f'fee:{code}'] = 'ok' if fees.get('mgmtFee') is not None else f'failed: 没解析到管理费 {snip[:60]}'
-            if fees.get('limit') is None and 'limit' in fees:
-                fees.pop('limit')
             f = merge(f, fees)
-            if fees.get('mgmtFee') is not None and 'buyCap' not in fees and fees.get('buyStatus') != '暂停申购':
-                f.pop('limit', None); f.pop('buyCap', None)   # 费率页没写限购，说明现在不限购
+            st = fees.get('buyStatus')
+            if st == '开放申购':
+                f.pop('limit', None); f.pop('buyCap', None)        # 明确写着开放申购，才认为已经不限购
+            elif st == '暂停申购' and 'buyCap' not in fees:
+                f.pop('buyCap', None); f['limit'] = '暂停申购'      # 暂停又没写上限：这个月买不了
+            elif st in ('限大额', '暂停大额申购') and 'buyCap' not in fees:
+                f['limit'] = st                                    # 限大额但没读到金额：保留旧的上限
+            if not st:
+                status[f'fee:{code}'] += '（没读到申购状态，沿用上次）'
             if snip:
                 f['statusText'] = snip.strip()
+            else:
+                f.pop('statusText', None)
         except Exception as e:  # noqa: BLE001
             status[f'fee:{code}'] = f'failed: {e}'
             for k in ('mgmtFee', 'custFee', 'salesFee', 'limit', 'limitDate'):

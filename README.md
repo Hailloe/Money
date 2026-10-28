@@ -161,7 +161,7 @@
 ### 换一只基金
 1. 在 `config.js` 的 `funds` 里加一项（写清楚 `code`、`cat`、`why`、`risk`、`exit`），推荐的加 `pick: true` 和 `split`；海外基金还要写 `val: 'sp500'` 或 `val: 'ndx'`
    - `why` / `risk` / `exit` 里不要写具体数字（比如“近 3 年涨了 13%”），数字会变，页面上的数字由数据自动生成
-2. 费率和限购不用手填：脚本每天从天天基金费率页（`fundf10.eastmoney.com/jjfl_代码.html`）抓管理费 `mgmtFee`、托管费 `custFee`、销售服务费 `salesFee`、申购状态 `buyStatus`、单日限购 `buyCap` / `limit`。抓不到时用上次的数据，再没有才用 `data/seed.json` 里手填的
+2. 费率和限购不用手填：脚本每天从天天基金费率页（`fundf10.eastmoney.com/jjfl_代码.html`）抓管理费 `mgmtFee`、托管费 `custFee`、销售服务费 `salesFee`、申购状态 `buyStatus`、单日限购 `buyCap` / `limit`。抓不到时用上次的数据，再没有才用 `data/seed.json` 里手填的。只在“交易状态”后面一小段里找限额；明确写“开放申购”才清掉限购，“暂停申购”又没写上限时当作这个月买不了。同一指数的推荐基金限购时，不建议把备选基金换过去
 3. 到 GitHub 仓库的 **Actions → 更新基金数据 → Run workflow** 手动跑一次，新基金的数据就有了
 
 ### 数据好几天没更新
