@@ -1,5 +1,5 @@
 {
- "checked": "2026-10-28 23:35",
+ "checked": "2026-10-29 00:39",
  "history": [],
  "state": {
   "sig": {
@@ -37,11 +37,6 @@
     "cat": "bond",
     "dd": 0.0
    },
-   "217022": {
-    "name": "招商产业债A",
-    "cat": "bond",
-    "dd": 0.0
-   },
    "460300": {
     "name": "沪深300联接A",
     "cat": "index",
@@ -61,21 +56,11 @@
     "name": "易方达纳指100",
     "cat": "overseas",
     "dd": -4.0
-   },
-   "163406": {
-    "name": "兴全合润",
-    "cat": "active",
-    "dd": -31.3
-   },
-   "161005": {
-    "name": "富国天惠",
-    "cat": "active",
-    "dd": -10.5
    }
   },
   "navDate": "2026-10-28",
   "stale": false,
-  "staleDays": 0,
+  "staleDays": 1,
   "ddAlerted": {
    "163406": -31.3
   }
