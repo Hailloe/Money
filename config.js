@@ -8,6 +8,7 @@ window.CONFIG = {
   cats: [
     { k: 'index',  n: '宽基指数', eq: true,  ret: 7,   dd: 35 },
     { k: 'div',    n: '红利低波', eq: true,  ret: 7,   dd: 25 },
+    { k: 'overseas', n: '海外', eq: true, ret: 7,   dd: 35 },
     { k: 'bond',   n: '债券',     eq: false, ret: 2.5, dd: 3 },
     { k: 'active', n: '主动基金', eq: true,  ret: 8,   dd: 45 },
     { k: 'cash',   n: '货币',     eq: false, ret: 1.3, dd: 0 }
@@ -15,10 +16,10 @@ window.CONFIG = {
 
   /* 风险等级 → 目标比例（%，每行加起来 100）。风险问卷决定用哪一档 */
   levels: [
-    { k: 'conservative', n: '保守', target: { index: 20, div: 20, bond: 45, active: 5,  cash: 10 } },
-    { k: 'steady',       n: '稳健', target: { index: 28, div: 27, bond: 32, active: 5,  cash: 8 } },
-    { k: 'balanced',     n: '平衡', target: { index: 35, div: 30, bond: 20, active: 10, cash: 5 } },
-    { k: 'growth',       n: '进取', target: { index: 42, div: 33, bond: 12, active: 10, cash: 3 } }
+    { k: 'conservative', n: '保守', target: { index: 15, div: 17, overseas: 8,  bond: 45, active: 5,  cash: 10 } },
+    { k: 'steady',       n: '稳健', target: { index: 22, div: 22, overseas: 11, bond: 32, active: 5,  cash: 8 } },
+    { k: 'balanced',     n: '平衡', target: { index: 27, div: 23, overseas: 15, bond: 20, active: 10, cash: 5 } },
+    { k: 'growth',       n: '进取', target: { index: 30, div: 25, overseas: 20, bond: 12, active: 10, cash: 3 } }
   ],
   defaultLevel: 'balanced',
 
@@ -27,6 +28,7 @@ window.CONFIG = {
     // 宽基估值百分位（近10年市盈率分位）→ 定投倍数
     pe: [ { below: 20, m: 2,   t: '很便宜' }, { below: 40, m: 1.5, t: '偏便宜' }, { below: 60, m: 1, t: '合理' },
           { below: 80, m: 0.5, t: '偏贵' },   { below: 101, m: 0,  t: '很贵' } ],
+    // 海外（标普500、纳指100）同样看各自近10年市盈率分位，阈值和宽基一样
     // 红利低波股息率 − 10年国债收益率（百分点）→ 定投倍数
     spread: [ { atLeast: 3, m: 2, t: '很便宜' }, { atLeast: 2, m: 1.5, t: '偏便宜' }, { atLeast: 1, m: 1, t: '合理' },
               { atLeast: 0.5, m: 0.5, t: '偏贵' }, { atLeast: -99, m: 0, t: '很贵' } ],

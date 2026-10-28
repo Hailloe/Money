@@ -5,7 +5,7 @@
   --brand:#007AFF; --brand-soft:rgba(0,122,255,.10);
   --up:#E5352B; --up-soft:rgba(255,59,48,.10); --down:#1E9E4A; --down-soft:rgba(52,199,89,.13);   /* 中国习惯：红涨绿跌 */
   --warn:#C26A00; --warn-soft:rgba(255,149,0,.13); --stop:#C2410C; --stop-soft:rgba(234,88,12,.13); --cheap:#0060DF; --cheap-soft:rgba(0,122,255,.12);
-  --s-index:#007AFF; --s-div:#FF9500; --s-bond:#30B0C7; --s-active:#AF52DE; --s-cash:#FF6FA0;
+  --s-index:#007AFF; --s-div:#FF9500; --s-overseas:#5856D6; --s-bond:#30B0C7; --s-active:#AF52DE; --s-cash:#FF6FA0;
   --shadow:0 0 0 .5px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.06),0 6px 20px rgba(0,0,0,.04);
   --body:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Helvetica Neue","Microsoft YaHei",system-ui,sans-serif;
   --disp:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Helvetica Neue","Microsoft YaHei",system-ui,sans-serif;
@@ -17,7 +17,7 @@
   --line:rgba(84,84,88,.55); --soft:#3A3A3C; --fill:rgba(120,120,128,.24); --sel:rgba(255,255,255,.08);
   --brand:#0A84FF; --brand-soft:rgba(10,132,255,.20);
   --up:#FF6961; --up-soft:rgba(255,69,58,.18); --down:#4CD964; --down-soft:rgba(48,209,88,.18); --warn:#FFB340; --warn-soft:rgba(255,159,10,.20); --stop:#FF8A50; --stop-soft:rgba(255,120,60,.20); --cheap:#64A8FF; --cheap-soft:rgba(10,132,255,.22);
-  --s-index:#0A84FF; --s-div:#CC7400; --s-bond:#1C93A8; --s-active:#B55AE8; --s-cash:#D6517E;
+  --s-index:#0A84FF; --s-div:#CC7400; --s-overseas:#7D7AFF; --s-bond:#1C93A8; --s-active:#B55AE8; --s-cash:#D6517E;
   --shadow:0 0 0 .5px rgba(255,255,255,.06),0 1px 3px rgba(0,0,0,.3);
   color-scheme:dark}}
 :root[data-theme="dark"]{
@@ -25,7 +25,7 @@
   --line:rgba(84,84,88,.55); --soft:#3A3A3C; --fill:rgba(120,120,128,.24); --sel:rgba(255,255,255,.08);
   --brand:#0A84FF; --brand-soft:rgba(10,132,255,.20);
   --up:#FF6961; --up-soft:rgba(255,69,58,.18); --down:#4CD964; --down-soft:rgba(48,209,88,.18); --warn:#FFB340; --warn-soft:rgba(255,159,10,.20); --stop:#FF8A50; --stop-soft:rgba(255,120,60,.20); --cheap:#64A8FF; --cheap-soft:rgba(10,132,255,.22);
-  --s-index:#0A84FF; --s-div:#CC7400; --s-bond:#1C93A8; --s-active:#B55AE8; --s-cash:#D6517E;
+  --s-index:#0A84FF; --s-div:#CC7400; --s-overseas:#7D7AFF; --s-bond:#1C93A8; --s-active:#B55AE8; --s-cash:#D6517E;
   --shadow:0 0 0 .5px rgba(255,255,255,.06),0 1px 3px rgba(0,0,0,.3);
   color-scheme:dark}
 *{box-sizing:border-box}
@@ -255,3 +255,4 @@ a.plain:hover{text-decoration:underline}
 .who{text-decoration:none;flex:none;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .who i{width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font-style:normal;display:grid;place-items:center;font-size:11px;font-weight:600}
 @media (max-width:899px){.top .in{position:relative}.who{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:12px}.who span{display:none}.who i{width:30px;height:30px;font-size:13px}.datestamp{padding-right:40px}}
+.us{display:grid;gap:10px;border-top:.5px solid var(--line);padding-top:10px}

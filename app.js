@@ -85,6 +85,15 @@ function currentLevel() {
 function targets() {
   const t = Object.assign({}, currentLevel().level.target);
   if (P.prefs && P.prefs.noActive) { t.index += t.active; t.active = 0; }
+  const want = P.prefs && P.prefs.overseasPct;
+  if (want && want !== t.overseas) {
+    // 海外比例调整时，只从宽基、红利低波、主动里匀，债券和货币不动
+    const keys = ['index', 'div', 'active'], others = keys.reduce((a, k) => a + t[k], 0), room = others + t.overseas - want;
+    if (room > 0) {
+      keys.forEach(k => t[k] = Math.round(t[k] / others * room));
+      t.overseas = want; t.index += 100 - Object.values(t).reduce((a, b) => a + b, 0);
+    }
+  }
   return t;
 }
 
@@ -99,12 +108,20 @@ function spreadSignal(s) {
   const r = C.rules.spread.find(x => s >= x.atLeast);
   return { m: r.m, t: r.t, k: r.m >= 1.5 ? 'cheap' : r.m === 1 ? 'hold' : r.m > 0 ? 'wait' : 'stop' };
 }
-let idxPct, spread, SIG;
+let idxPct, spread, SIG, SIGV = {};
 function computeSignals() {
   idxPct = M.hs300 && M.hs300.pePct10y != null ? M.hs300.pePct10y : null;
   spread = M.divLowVol && M.divLowVol.dy != null && M.cgb10y && M.cgb10y.yield != null ? +(M.divLowVol.dy - M.cgb10y.yield).toFixed(2) : null;
   const pe = peSignal(idxPct);
-  SIG = { index: pe, active: pe, div: spreadSignal(spread), bond: { m: 1, t: '照常', k: 'hold' }, cash: { m: 1, t: '照常', k: 'hold' } };
+  SIGV = { sp500: peSignal(M.sp500 && M.sp500.pePct10y), ndx: peSignal(M.ndx && M.ndx.pePct10y) };
+  SIG = { index: pe, active: pe, div: spreadSignal(spread), overseas: SIGV.sp500, bond: { m: 1, t: '照常', k: 'hold' }, cash: { m: 1, t: '照常', k: 'hold' } };
+}
+/* 海外基金按各自跟踪的指数估值；其他类别按类别 */
+function sigOf(cat, f) { return cat === 'overseas' && f && f.val && SIGV[f.val] ? SIGV[f.val] : SIG[cat]; }
+function valText(cat, f) {
+  if (cat === 'div') return `息差 ${spread == null ? '—' : spread + ' 个点'}`;
+  if (cat === 'overseas') { const k = f && f.val || 'sp500', m = M[k]; return `${k === 'ndx' ? '纳指100' : '标普500'}近10年 ${m && m.pePct10y != null ? Math.round(m.pePct10y) + '%' : '—'} 分位`; }
+  return `沪深300近10年 ${idxPct == null ? '—' : Math.round(idxPct) + '%'} 分位`;
 }
 
 /* ================= 评分：只看长期质量，不看近1年涨幅 ================= */
@@ -113,6 +130,7 @@ const W = {
   div: { fee: .35, scale: .25, ret3y: .25, dd: .1, age: .05 },
   bond: { dd: .35, ret3y: .3, scale: .2, fee: .15 },
   active: { ret3y: .3, dd: .25, tenure: .25, scale: .1, fee: .1 },
+  overseas: { fee: .35, scale: .25, ret3y: .2, dd: .1, age: .1 },
   cash: { scale: 1 }
 };
 const MNAME = { fee: '费率', scale: '规模', ret3y: '近3年收益', dd: '最大回撤', age: '成立年限', tenure: '经理任职' };
@@ -169,11 +187,14 @@ function analyze() {
   const monthly = +P.monthly || 0, plan = []; let parked = 0;
   C.cats.forEach(c => {
     const base = monthly * T[c.k] / 100; if (!base) return;
-    const sig = SIG[c.k]; let m = sig.m;
-    if (c.eq && dev[c.k] <= -R.catchUpBand && m > 0 && total > 0) m += 0.5;
-    const amt = base * m; if (c.eq && amt < base) parked += base - amt;
     const ps = picksOf(c.k);
-    ps.forEach(p => plan.push({ fund: p, cat: c.k, base: base * (p.split || 1 / ps.length), amt: amt * (p.split || 1 / ps.length), m, sig }));
+    ps.forEach(p => {
+      const sig = sigOf(c.k, p); let m = sig.m;
+      if (c.eq && dev[c.k] <= -R.catchUpBand && m > 0 && total > 0) m += 0.5;
+      const b = base * (p.split || 1 / ps.length), amt = b * m;
+      if (c.eq && amt < b) parked += b - amt;
+      plan.push({ fund: p, cat: c.k, base: b, amt, m, sig });
+    });
   });
   const cashPick = plan.find(p => p.cat === 'cash');
   if (cashPick) cashPick.amt += parked; else if (parked) plan.push({ fund: picksOf('cash')[0], cat: 'cash', base: 0, amt: parked, m: 1, sig: SIG.cash });
@@ -183,7 +204,7 @@ function analyze() {
 
   const avoid = (P.prefs && P.prefs.avoid) || [];
   const adv = items.map(i => {
-    const c = CAT[i.cat], sig = SIG[i.cat], f = i.fund, cost = i.amount - i.profit, pp = cost > 0 ? i.profit / cost * 100 : 0;
+    const c = CAT[i.cat], f = i.fund, sig = sigOf(i.cat, f), cost = i.amount - i.profit, pp = cost > 0 ? i.profit / cost * 100 : 0;
     const share = byCat[i.cat] ? i.amount / byCat[i.cat] : 0;
     const best = picksOf(i.cat)[0];
     const bestName = best ? (best.short || best.name) : '同类推荐基金';
@@ -200,7 +221,7 @@ function analyze() {
       a = { k: 'swap', t: '换成更好的', amt: i.amount, why: [`同类综合评分 ${f.score} 分，推荐的 ${bestName} 是 ${best.score} 分（看费率、规模、3年收益和回撤，不看短期涨幅）。`,
         sig.m === 0 ? '现在估值贵，卖出后先把钱放进余额宝，等估值回落再按计划买入推荐基金。' : `卖出后按计划买入 ${bestName}。持有不满 7 天卖出要交 1.5% 赎回费。`] };
     } else if (c.eq && sig.m === 0 && pp >= R.takeProfitPct) {
-      a = { k: 'sell', t: '分批止盈', amt: Math.round(i.amount * R.takeProfitSlice), why: [`估值${sig.t}${i.cat === 'div' ? `（息差 ${spread} 个点）` : `（近10年 ${Math.round(idxPct)}% 分位）`}，你这只赚了 ${pp.toFixed(0)}%。`,
+      a = { k: 'sell', t: '分批止盈', amt: Math.round(i.amount * R.takeProfitSlice), why: [`估值${sig.t}（${valText(i.cat, f)}），你这只赚了 ${pp.toFixed(0)}%。`,
         `这个月先卖 ${R.takeProfitSlice * 100}%，估值不降就每月再卖一次，钱转到债券。不一次卖光，防止卖早。`] };
     } else if (dev[i.cat] >= R.rebalanceBand) {
       const excess = Math.min(i.amount, (w[i.cat] - T[i.cat]) / 100 * total * share);
@@ -208,7 +229,7 @@ function analyze() {
         ? { k: 'buy', t: '转出补仓', amt: Math.round(excess), why: [`余额宝里放了 ${w[i.cat].toFixed(0)}%，目标 ${T[i.cat]}%，闲置太多。`, `转出 ${fmt(excess)}，补到占比不够、估值不贵的类别。`] }
         : { k: 'sell', t: '减仓', amt: Math.round(excess), why: [`${c.n}现在占 ${w[i.cat].toFixed(0)}%，目标 ${T[i.cat]}%，超了 ${dev[i.cat].toFixed(0)} 个百分点。`, '卖出超出部分，钱补到占比不够的类别。'] };
     } else if (c.eq && sig.m === 0) {
-      a = { k: 'stop', t: '暂停买入', amt: 0, why: [`估值${sig.t}，拿着不动，这个月不再买。`, pp < R.takeProfitPct ? `目前赚 ${pp.toFixed(0)}%，没到 ${R.takeProfitPct}% 的止盈线，不用卖。` : ''] };
+      a = { k: 'stop', t: '暂停买入', amt: 0, why: [`估值${sig.t}（${valText(i.cat, f)}），拿着不动，这个月不再买。`, pp < R.takeProfitPct ? `目前赚 ${pp.toFixed(0)}%，没到 ${R.takeProfitPct}% 的止盈线，不用卖。` : ''] };
     } else {
       const p = planFor(i.code);
       const low = dev[i.cat] <= -R.rebalanceBand;
@@ -220,8 +241,8 @@ function analyze() {
   });
   const held = new Set(items.map(i => i.code));
   const missing = FUNDS.filter(f => f.pick && !held.has(f.code) && T[f.cat] > 0).map(f => {
-    const sig = SIG[f.cat], p = plan.find(x => x.fund && x.fund.code === f.code);
-    const a = sig.m === 0 ? { k: 'stop', t: '先不买', amt: 0, why: [`估值${sig.t}。等估值回落再开始定投，这部分钱先放余额宝。`] }
+    const sig = sigOf(f.cat, f), p = plan.find(x => x.fund && x.fund.code === f.code);
+    const a = sig.m === 0 ? { k: 'stop', t: '先不买', amt: 0, why: [`估值${sig.t}（${valText(f.cat, f)}）。等估值回落再开始定投，这部分钱先放余额宝。`] }
       : { k: 'buy', t: '开始买入', amt: p ? Math.round(p.amt) : 0, why: [`组合里还没有${CAT[f.cat].n}这一块，估值${sig.t}，从本月开始定投。`] };
     return { code: f.code, fund: f, cat: f.cat, name: f.name, amount: 0, profit: 0, pp: 0, adv: a, notHeld: true };
   });
@@ -379,6 +400,7 @@ function viewHome(A) {
       <div class="temp"><span>沪深300 估值分位</span>${sigChip(SIG.index)}<span class="v n">${idxPct == null ? '—' : Math.round(idxPct) + '%'}</span><span class="sub">${cnDate(M.hs300 && M.hs300.date)}</span></div>
       ${gaugeHTML(idxPct)}
       <div class="temp"><span>红利低波 比国债多赚</span>${sigChip(SIG.div)}<span class="v n">${spread == null ? '—' : spread.toFixed(2) + ' 个点'}</span><span class="sub">${cnDate(M.divLowVol && M.divLowVol.date)}</span></div>
+      <div class="us">${[['sp500', '标普500'], ['ndx', '纳指100']].map(([k, n]) => `<div class="temp"><span>${n} 估值分位</span>${sigChip(SIGV[k])}<span class="v n">${M[k] && M[k].pePct10y != null ? Math.round(M[k].pePct10y) + '%' : '—'}</span><span class="sub">${cnDate(M[k] && M[k].date)}</span></div>`).join('')}</div>
     </section>
     <section class="card" aria-label="本月定投">
       <div class="card-h"><h3>本月定投 <span class="n">${fmt(A.planTotal)}</span></h3><a class="more" href="#analysis-plan">明细 ›</a></div>
@@ -439,6 +461,12 @@ function viewAnalysis(A) {
       <div class="stat"><span class="k">息差</span><span class="v n">${spread == null ? '—' : spread.toFixed(2)}</span></div>
     </div>
     <p class="note">息差大于 2 个点说明红利低波相对便宜，小于 1 个点说明贵了。${esc(M.bondNote || '')}</p>
+    <div class="stats">
+      <div class="stat"><span class="k">标普500 估值分位</span><span class="v n">${M.sp500 && M.sp500.pePct10y != null ? Math.round(M.sp500.pePct10y) + '%' : '—'}</span></div>
+      <div class="stat"><span class="k">纳指100 估值分位</span><span class="v n">${M.ndx && M.ndx.pePct10y != null ? Math.round(M.ndx.pePct10y) + '%' : '—'}</span></div>
+      <div class="stat"><span class="k">美国10年国债</span><span class="v n">${M.ust10y && M.ust10y.yield != null ? M.ust10y.yield + '%' : '—'}</span></div>
+    </div>
+    <p class="note">海外按标普500、纳指100 各自的估值分位决定买多少，规则和 A 股一样。QDII 基金常有限购，买不满的部分留在余额宝。</p>
   </section>
   </div>
   ${(M.hs300Hist && M.hs300Hist.length) || (M.divLowVolHist && M.divLowVolHist.length) ? `<div class="grid2">
@@ -480,7 +508,7 @@ function viewFunds() {
 
 function viewFund(code, A) {
   const f = FUND[code]; if (!f) return `<div class="view"><button class="back" type="button" data-back>‹ 返回</button><p>没有找到这只基金。</p></div>`;
-  const c = CAT[f.cat], sig = SIG[f.cat], hold = A.advice.find(x => x.code === code);
+  const c = CAT[f.cat], sig = sigOf(f.cat, f), hold = A.advice.find(x => x.code === code);
   const peers = FUNDS.filter(x => x.cat === f.cat).sort((a, b) => a.rank - b.rank);
   const parts = Object.keys(W[f.cat]).map(k => `<div class="part"><span class="muted">${MNAME[k]}</span>${scoreBar(Math.round(f.parts[k] * 100), `var(--s-${f.cat})`)}</div>`).join('');
   return `<div class="view">
@@ -518,7 +546,8 @@ function viewFund(code, A) {
     <section class="card"><div class="card-h"><h3>现在该怎么做</h3>${hold ? actChip(hold.adv) : sigChip(sig)}</div>
       ${hold ? `<div class="why">${hold.adv.why.map(w => `<span>${esc(w)}</span>`).join('')}</div>${hold.adv.amt ? `<div class="bigamt">${amtLine(hold.adv)}</div>` : ''}`
         : `<p>你没有持有它，它也不在推荐组合里。${sig.m === 0 ? '现在估值贵，不建议买。' : '要买同类的话，优先买推荐的那只。'}</p>`}
-      ${f.cat === 'index' || f.cat === 'active' ? `<div class="temp"><span>沪深300 估值分位 ${idxPct == null ? '—' : Math.round(idxPct) + '%'}</span>${sigChip(sig)}</div>${gaugeHTML(idxPct)}` : f.cat === 'div' ? `<div class="temp"><span>息差 ${spread == null ? '—' : spread.toFixed(2) + ' 个点'}</span>${sigChip(sig)}</div>` : ''}
+      ${f.cat === 'index' || f.cat === 'active' ? `<div class="temp"><span>沪深300 估值分位 ${idxPct == null ? '—' : Math.round(idxPct) + '%'}</span>${sigChip(sig)}</div>${gaugeHTML(idxPct)}` : f.cat === 'div' ? `<div class="temp"><span>息差 ${spread == null ? '—' : spread.toFixed(2) + ' 个点'}</span>${sigChip(sig)}</div>` : f.cat === 'overseas' ? `<div class="temp"><span>${valText('overseas', f)}</span>${sigChip(sig)}</div>${gaugeHTML(M[f.val] && M[f.val].pePct10y)}` : ''}
+      ${f.limit ? `<p class="note">限购：${esc(f.limit)}${f.limitDate ? `（${esc(f.limitDate)} 公告）` : ''}。买不进去时，多出来的钱先放余额宝，下个月再买。</p>` : ''}
     </section>
   </div>
   <div class="grid2">
@@ -606,6 +635,7 @@ function viewMe() {
       <label class="field">每月定投金额（元）<input type="number" inputmode="decimal" id="pref-monthly" value="${P.monthly || ''}"></label>
       <label class="field">每月几号定投<input type="number" inputmode="numeric" id="pref-day" min="1" max="28" value="${P.prefs.day || 10}"></label>
     </div>
+    <label class="field">海外比例（标普500 : 纳指100 = 7 : 3）<select id="pref-overseas">${[[0, `按风险档位（${currentLevel().level.target.overseas}%）`], [20, '20%'], [25, '25%（建议上限）']].map(([v, n]) => `<option value="${v}" ${(+P.prefs.overseasPct || 0) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     <label class="switch"><input type="checkbox" id="pref-noactive" ${P.prefs.noActive ? 'checked' : ''}><span>不买主动基金（全部用指数基金）</span></label>
     <div class="field"><span>不想碰的行业（名单外的基金名字里有这些字，会建议卖出）</span><div class="opts wrap">${C.avoidOptions.map(a => `<label class="opt"><input type="checkbox" data-avoid="${esc(a)}" ${avoid.includes(a) ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div></div>
   </section>
@@ -699,6 +729,7 @@ function bindMe() {
   $('#pname').addEventListener('change', e => { P.name = e.target.value.trim().slice(0, 12) || '我'; save(); render(true); });
   $('#pref-monthly').addEventListener('change', e => { const v = Math.max(0, Number(e.target.value) || 0); P.monthly = v; save(); toast('已保存'); });
   $('#pref-day').addEventListener('change', e => { const v = Math.min(28, Math.max(1, Math.round(Number(e.target.value) || 10))); P.prefs.day = v; e.target.value = v; save(); toast('已保存'); });
+  $('#pref-overseas').addEventListener('change', e => { P.prefs.overseasPct = +e.target.value || 0; save(); render(true); toast('已调整海外比例'); });
   $('#pref-noactive').addEventListener('change', e => { P.prefs.noActive = e.target.checked; save(); render(true); });
   document.querySelectorAll('[data-avoid]').forEach(cb => cb.addEventListener('change', () => { P.prefs.avoid = [...document.querySelectorAll('[data-avoid]:checked')].map(x => x.dataset.avoid); save(); }));
   $('#quiz').addEventListener('submit', e => {

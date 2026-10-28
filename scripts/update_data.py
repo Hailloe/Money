@@ -5,8 +5,8 @@
 
 数据来源（都是公开网页接口，不需要账号）：
   - 天天基金 pingzhongdata：基金净值历史、规模、基金经理  → 算出近1年/近3年/今年以来收益、近3年最大回撤、逐年收益
-  - 蛋卷基金 指数估值：沪深300、中证A500、红利低波 的市盈率、估值百分位、股息率
-  - 东方财富 数据中心：中国 10 年期国债收益率
+  - 蛋卷基金 指数估值：沪深300、中证A500、红利低波、标普500、纳指100 的市盈率、估值百分位、股息率
+  - 东方财富 数据中心：中国、美国 10 年期国债收益率
   - 东方财富 行情：指数月线 → 逐年涨跌
 
 任何一个来源失败，都保留 data.json 里上一次的数字，不会把好数据覆盖成空。
@@ -164,7 +164,7 @@ def fetch_fund(code):
 def fetch_valuations():
     src = get('https://danjuanfunds.com/djapi/index_eva/dj', referer='https://danjuanfunds.com/djmodule/value-center')
     items = json.loads(src)['data']['items']
-    want = {'SH000300': 'hs300', 'CSI000510': 'a500', 'SH000510': 'a500', 'CSIH30269': 'divLowVol'}
+    want = {'SH000300': 'hs300', 'CSI000510': 'a500', 'SH000510': 'a500', 'CSIH30269': 'divLowVol', 'SP500': 'sp500', 'NDX': 'ndx'}
     out = {}
     for it in items:
         key = want.get(it.get('index_code'))
@@ -184,10 +184,12 @@ def fetch_valuations():
 
 def fetch_cgb10y():
     url = ('https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD'
-           '&columns=SOLAR_DATE,EMM00166466&sortColumns=SOLAR_DATE&sortTypes=-1&pageSize=1&pageNumber=1')
+           '&columns=SOLAR_DATE,EMM00166466,EMG00001310&sortColumns=SOLAR_DATE&sortTypes=-1&pageSize=1&pageNumber=1')
     row = json.loads(get(url, referer='https://data.eastmoney.com/cjsj/zmgzsyl.html'))['result']['data'][0]
-    return {'yield': round(float(row['EMM00166466']), 3), 'date': row['SOLAR_DATE'][:10],
-            'src': 'https://data.eastmoney.com/cjsj/zmgzsyl.html'}
+    src = 'https://data.eastmoney.com/cjsj/zmgzsyl.html'
+    cn = {'yield': round(float(row['EMM00166466']), 3), 'date': row['SOLAR_DATE'][:10], 'src': src}
+    us = {'yield': round(float(row['EMG00001310']), 3), 'date': row['SOLAR_DATE'][:10], 'src': src} if row.get('EMG00001310') is not None else None
+    return cn, us
 
 
 def fetch_index_years(secid):
@@ -232,7 +234,7 @@ def main():
             status[f'fund:{code}'] = f'failed: {e}'
         f = merge(base, fresh)
         # 静态字段始终以 seed 为准（费率、任职、公告提示由人维护）
-        for k in ('mgmtFee', 'custFee', 'salesFee', 'managerSince', 'index', 'notes', 'share'):
+        for k in ('mgmtFee', 'custFee', 'salesFee', 'managerSince', 'index', 'notes', 'share', 'limit', 'limitDate'):
             if k in seed_funds.get(code, {}):
                 f[k] = seed_funds[code][k]
         f['code'] = code
@@ -248,7 +250,10 @@ def main():
     except Exception as e:  # noqa: BLE001
         status['valuation'] = f'failed: {e}'
     try:
-        market['cgb10y'] = merge(market.get('cgb10y'), fetch_cgb10y())
+        cn, us = fetch_cgb10y()
+        market['cgb10y'] = merge(market.get('cgb10y'), cn)
+        if us:
+            market['ust10y'] = merge(market.get('ust10y'), us)
         status['cgb10y'] = 'ok'
     except Exception as e:  # noqa: BLE001
         status['cgb10y'] = f'failed: {e}'
