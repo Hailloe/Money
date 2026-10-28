@@ -1002,12 +1002,14 @@ function goalCard(A) {
       <p class="note">这段时间的进出记录比较特殊（比如中途转出了大部分钱，或者账户几乎清空），算不出有意义的年化，只看累计收益。如果是记错了，到“持仓 → 记账”里检查一下。</p>`;
   else if (st.irr == null) body = `<div class="stats"><div class="stat"><span class="k">记账以来</span><span class="v n">${st.days} 天</span></div><div class="stat"><span class="k">累计收益</span><span class="v n ${cls(Math.round(st.gain))}">${signed(Math.round(st.gain))}</span></div><div class="stat"><span class="k">累计收益率</span><span class="v n ${cls(st.gainPct)}">${pctN(st.gainPct, 2)}</span></div></div>
       <p class="note">记满 3 个月（还差 ${Math.max(0, 90 - st.days)} 天）才显示年化。时间太短，年化数字会被一两天的涨跌放大，没有参考意义。</p>`;
+  else if (Math.abs(st.irr) > 40 || (st.gainPct != null && st.gainPct < -40)) body = `<div class="temp"><span>你的真实年化（从 ${fullDate(st.L.start)} 起）</span><span class="act wait">需要核对</span><span class="v n">${pctN(st.irr, 1)}</span><span class="sub">累计 ${signed(Math.round(st.gain))}</span></div>
+      <p class="note">这个数字不太正常，多半是记账和持仓金额没对上：比如转入了钱没记，或者记了却没更新持仓。先到“持仓 → 记账”核对一下，再看年化。</p>`;
   else {
     const inGoal = st.irr >= GOAL.lo && st.irr <= GOAL.hi, above = st.irr > GOAL.hi;
     body = `<div class="temp"><span>你的真实年化（从 ${fullDate(st.L.start)} 起）</span><span class="act ${above ? 'wait' : 'hold'}">${inGoal ? '在目标里' : above ? '高于目标' : '暂时低于目标'}</span><span class="v n ${cls(st.irr)}">${pctN(st.irr, 1)}</span><span class="sub">累计 ${signed(Math.round(st.gain))}</span></div>
       <p class="note">“年化”相当于每年平均赚多少，已经考虑了钱是分批投进来的。</p>
       ${goalGauge(st.irr)}
-      ${st.days >= 365 ? `<p class="note">同一段时间，如果这些钱全放余额宝，现在大约是 ${fmt(st.cashVal)}；你现在是 ${fmt(A.total)}，${A.total >= st.cashVal ? `多了 ${fmt(A.total - st.cashVal)}` : `少了 ${fmt(st.cashVal - A.total)}。股票类基金要经过一轮涨跌才能体现收益，少的时候更要坚持`}。</p>` : ''}
+      ${st.days >= 365 ? `<p class="note">同一段时间，如果这些钱全放余额宝，现在大约是 ${fmt(st.cashVal)}；你现在是 ${fmt(A.total)}，${A.total >= st.cashVal ? `多了 ${fmt(A.total - st.cashVal)}` : `少了 ${fmt(st.cashVal - A.total)}`}。</p>` : ''}
       <p class="note">${above ? '高于 10% 通常是碰上了好行情，不代表以后也这样。别因此加大股票比例，也别因为赚得多就加大每月金额或追买涨得多的基金。' : !inGoal ? (st.days < 730 ? '不到两年，低于目标很常见：股票类基金要经过一轮涨跌才能体现收益。这时候最不该做的是停投或卖出，坚持按计划定投。' : '两年以上仍低于目标。先看看有没有在大跌时停投或卖出，这是最常见的原因；配置没问题就继续按计划，别在低点卖掉。') : '在目标里，继续按计划执行。'}</p>`;
   }
   return `<section class="card span2" aria-label="年化目标">
