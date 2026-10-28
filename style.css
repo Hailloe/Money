@@ -298,3 +298,7 @@ td .cellname .tag{flex:none}
 .note.err{color:var(--stop)}
 .alert{display:grid;gap:4px;border-left:3px solid var(--warn);padding:2px 0 2px 10px;margin-top:8px}
 .calm{font-size:14px;color:var(--fg);background:var(--fill);border-radius:10px;padding:10px 12px}
+.ai-body{display:grid;gap:6px}.ai-body p{margin:0}.ai-body ul{margin:0;padding-left:1.2em;display:grid;gap:4px}
+.calm .sub{display:block;margin-top:4px}
+.warnbox{background:var(--warn-soft)}
+@media (max-width:899px){.pickfrom summary{min-height:44px}}

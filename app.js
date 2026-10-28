@@ -908,7 +908,8 @@ function viewMe() {
       <label class="field">API key<input id="ai-key" type="password" class="txt" autocomplete="off" placeholder="${AIS.key ? '已保存（' + esc(AIS.key.slice(0, 5)) + '…），重新粘贴可替换' : 'sk-…'}"></label>
       <label class="field">模型<select id="ai-model">${C.ai.models.map(m => `<option value="${m.id}" ${AIS.model === m.id ? 'selected' : ''}>${esc(m.n)}</option>`).join('')}</select></label>
     </div>
-    <label class="field">自动解读<select id="ai-auto">${[['change', '建议有变化或到定投日时（推荐）'], ['off', '关闭，只在我点按钮时解读']].map(([v, n]) => `<option value="${v}" ${AIS.auto === v ? 'selected' : ''}>${n}</option>`).join('')}</select><span>打开网站时检查：只有你的操作建议变了，或者到了每月定投日，才会让 AI 重新解读，不会天天发。</span></label>
+    <label class="field">自动解读<select id="ai-auto">${[['change', '建议有变化或到定投日时（推荐）'], ['off', '关闭，只在我点按钮时解读']].map(([v, n]) => `<option value="${v}" ${AIS.auto === v ? 'selected' : ''}>${n}</option>`).join('')}</select><span>打开网站时检查：只有你的操作建议变了，或者到了每月定投日，才会让 AI 重新解读，不会天天发。自动解读时也会把持仓金额和建议发给 DeepSeek。</span></label>
+    <p class="note">后台盯盘不需要这个 key 也能运行（用规则文字提醒）。想让盯盘提醒也由 AI 来写：打开 GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret，Name 填 <b>DEEPSEEK_API_KEY</b>，Secret 填同一个 key，保存。</p>
     <div class="btnrow"><button class="btn" type="button" data-ai="savekey">保存</button>${AIS.key ? '<button class="btn ghost" type="button" data-ai="testkey">测试连接</button><button class="btn ghost" type="button" data-ai="delkey">删除 key</button>' : ''}</div>
     <div id="ai-test" class="note" hidden></div>
   </section>
@@ -933,10 +934,11 @@ const saveAI = () => { try { localStorage.setItem(AI_LS, JSON.stringify(AIS)); }
 let MARKET_AI = null;   // data/ai-report.json：GitHub 盯盘结果（checked 上次检查时间，history 变化提醒）
 const AI_SYSTEM = `你是一位冷静、不追涨杀跌的基金投资顾问，用简单的中文给完全不懂投资的新手讲解。
 规则：
-1. 买卖建议由页面的固定规则算出来（估值分位、比例偏离、分批卖出等），你负责解释原因，不要推翻它，也不要给出与规则矛盾的具体操作。如果你认为规则有风险，可以单独提醒“值得注意”。
+1. 买卖建议由页面固定规则算出，你只负责解释原因。不要推翻规则，不要建议规则之外的加仓、减仓、换基或择时。
 2. 只使用用户给你的数据，不要编造净值、收益、新闻或预测具体涨跌。数据不全时直接说不知道。
 3. 不追热点，不鼓励频繁交易，不承诺收益。提醒风险时具体、平实，不吓人。
-4. 回答简短：先一句话结论，再分点说明，每点一两句。不用表格。总长度控制在 400 字以内。`;
+4. 回答简短：先一句话结论，再分点说明，每点一两句。不用表格。总长度控制在 400 字以内。
+5. 如果用户问涨跌预测、热点或“现在要不要抄底/卖掉”，直接说无法预测，并把话题引回本月计划。不要使用“抄底、暴涨、机会来了、赶紧”等词。大多数时候结论就是“按计划执行，不用额外操作”，是这样就直说。`;
 function aiContext(A) {
   const lv = currentLevel();
   const sig = (k, f) => { const s = sigOf(k, f); return `${s.t}（买入倍数 ${s.m}）`; };
@@ -1008,8 +1010,8 @@ async function runAI(kind, opts) {
   const ctl = new AbortController(); aiBusy = ctl;
   const A = analyze();
   let user;
-  if (kind === 'review') user = `请根据下面的数据，用新手听得懂的话解读本月该怎么做：先一句话总结，然后说明最重要的 2–4 件事和原因，最后说一条需要注意的风险。\n数据：${JSON.stringify(aiContext(A))}`;
-  else if (kind === 'fund') user = `请用新手听得懂的话点评这只基金：它适合放在组合里做什么、现在估值情况、主要风险、我该怎么对待它。\n这只基金：${JSON.stringify(fundContext(FUND[opts.code]))}\n我的整体情况：${JSON.stringify(aiContext(A))}`;
+  if (kind === 'review') user = `请根据下面的数据，用新手听得懂的话解读本月该怎么做：先一句话总结，然后说明最重要的 2–4 件事和原因。如果有真正需要注意的风险，说一条；没有就写“本月没有特别需要注意的”。\n数据：${JSON.stringify(aiContext(A))}`;
+  else if (kind === 'fund') user = `请用新手听得懂的话点评这只基金：它在组合里起什么作用、现在估值情况、主要风险，以及按规则现在对它的操作是什么、为什么。\n这只基金：${JSON.stringify(fundContext(FUND[opts.code]))}\n我的整体情况：${JSON.stringify(aiContext(A))}`;
   else user = `我的问题：${opts.q}\n参考数据：${JSON.stringify(aiContext(A))}`;
   box.hidden = false; box.innerHTML = '<p class="note">AI 正在分析…</p>';
   const stopBtn = document.getElementById(opts.stop || 'ai-stop'); if (stopBtn) stopBtn.hidden = false;
@@ -1032,12 +1034,19 @@ function aiDue() {
 }
 function aiReportHTML(r) {
   if (!r) return '';
-  return `<div class="ai-text">${mdLite(r.text)}</div><p class="note">${esc(new Date(r.at).toLocaleString('zh-CN', { hour12: false }))} 生成 · ${esc(r.model)}。AI 只做解读，操作以规则建议为准。</p>`;
+  return `<div class="ai-body">${mdLite(r.text)}</div><p class="note">${esc(new Date(r.at).toLocaleString('zh-CN', { hour12: false }))} 生成 · ${esc(r.model)}。AI 只做解读，操作以规则建议为准。</p>`;
 }
 function marketAlerts(days) {
   const h = MARKET_AI && Array.isArray(MARKET_AI.history) ? MARKET_AI.history : [];
   const since = Date.now() - days * 86400000;
   return h.filter(x => x && typeof x.text === 'string' && Date.parse(String(x.date).replace(' ', 'T') + ':00+08:00') >= since);
+}
+function monitorStatus() {
+  const checked = MARKET_AI && MARKET_AI.checked;
+  if (!checked) return '<p class="calm warnbox">还没有盯盘记录。GitHub 的自动任务可能还没运行，这期间请自己留意估值变化。</p>';
+  const days = Math.floor((Date.now() - Date.parse(checked.replace(' ', 'T') + ':00+08:00')) / 86400000);
+  if (days > 3) return `<p class="calm warnbox">盯盘已经 ${days} 天没有检查了（上次 ${esc(checked)}），自动任务可能停了。</p>`;
+  return `<p class="calm">持续盯盘中，上次检查 ${esc(checked)}。最近 30 天没有需要你注意的变化，按计划执行就好。<span class="sub">盯盘只看公开的市场数据，看不到你的持仓。</span></p>`;
 }
 function alertHTML(x) { return `<div class="alert"><div class="sub n">${esc(x.date)} · ${x.model === 'rules' ? '规则提醒' : 'AI 提醒'}</div><div class="ai-text">${mdLite(x.text)}</div></div>`; }
 function aiCardHome() {
@@ -1046,7 +1055,7 @@ function aiCardHome() {
   return `<section class="card span2" aria-label="盯盘与 AI 解读">
     <div class="card-h"><h3>盯盘</h3><a class="more" href="#analysis-ai">${AIS.key ? '问 AI ›' : '历史提醒 ›'}</a></div>
     ${recent.length ? `<h4 class="ai-h">最近的变化提醒</h4>${alertHTML(recent[0])}${recent.length > 1 ? `<p class="note">近 30 天共 ${recent.length} 条提醒，全部记录在“买卖分析”页。</p>` : ''}`
-      : `<p class="calm">${checked ? `持续盯盘中，上次检查 ${esc(checked)}。` : '持续盯盘中。'}最近 30 天没有需要你注意的变化，按计划执行就好。</p>`}
+      : monitorStatus()}
     ${mine ? `<h4 class="ai-h">你的持仓解读</h4>${aiReportHTML(mine)}` : AIS.key ? '<p class="note">录入真实持仓后，建议有变化或到了定投日，AI 会自动解读一次。</p>' : '<p class="note">在“我的 → AI 助手”填上 DeepSeek key，建议有变化时 AI 会用大白话给你解读。</p>'}
   </section>`;
 }
@@ -1230,7 +1239,7 @@ async function boot() {
   FUNDS = C.funds.map(cf => Object.assign({ code: cf.code }, byCode[cf.code] || {}, cf));
   FUND = Object.fromEntries(FUNDS.map(f => [f.code, f]));
   CAT = Object.fromEntries(C.cats.map(c => [c.k, c]));
-  try { const r2 = await fetch('data/ai-report.json?v=' + Math.floor(Date.now() / 600000), { cache: 'no-cache' }); if (r2.ok) { const j = await r2.json(); if (j && typeof j.text === 'string') MARKET_AI = j; } } catch (e) { /* 还没有市场点评 */ }
+  try { const r2 = await fetch('data/ai-report.json?v=' + Math.floor(Date.now() / 600000), { cache: 'no-cache' }); if (r2.ok) { const j = await r2.json(); if (j && typeof j === 'object' && (Array.isArray(j.history) || typeof j.checked === 'string')) MARKET_AI = { checked: typeof j.checked === 'string' ? j.checked : '', history: Array.isArray(j.history) ? j.history : [] }; } } catch (e) { /* 还没有市场点评 */ }
   computeSignals(); scoreAll();
   $('#datestamp').textContent = '数据更新：' + (DATA.updated || '—');
   $('#sidefoot').textContent = `数据更新：${DATA.updated || '—'}。净值、估值每个交易日自动更新，基金详情页显示盘中实时估值。`;
