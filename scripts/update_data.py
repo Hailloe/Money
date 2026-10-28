@@ -160,6 +160,34 @@ def fetch_fund(code):
     return {k: v for k, v in out.items() if v is not None}
 
 
+def fetch_fees(code):
+    """天天基金“费率”页：管理费、托管费、销售服务费（年化 %），申购状态和单日限购额度。"""
+    html = get(f'https://fundf10.eastmoney.com/jjfl_{code}.html', referer='https://fundf10.eastmoney.com/')
+    text = re.sub(r'<[^>]+>', ' ', html)
+    text = re.sub(r'&nbsp;|\s+', ' ', text)
+    out = {}
+    for key, label in (('mgmtFee', '管理费率'), ('custFee', '托管费率'), ('salesFee', '销售服务费率')):
+        m = re.search(label + r'\s*([\d.]+)\s*%', text)
+        if m:
+            out[key] = round(float(m.group(1)), 4)
+        elif key == 'salesFee' and re.search(label + r'\s*(---|--|-)', text):
+            out[key] = 0.0
+    status = re.search(r'(暂停申购|暂停大额申购|限大额|开放申购|场内交易|认购期)', text)
+    cap = re.search(r'(?:单日累计购买上限|单日累计申购上限|单个账户单日累计申购.*?不超过|日累计申购限额)\s*([\d,.]+)\s*(万元|元)', text)
+    if status:
+        out['buyStatus'] = status.group(1)
+    if cap:
+        amt = float(cap.group(1).replace(',', '')) * (10000 if cap.group(2) == '万元' else 1)
+        out['buyCap'] = amt
+        out['limit'] = f"单日限购 {amt:,.0f} 元" if amt < 1e6 else f"单日限购 {amt / 10000:,.0f} 万元"
+    elif status and status.group(1) == '暂停申购':
+        out['limit'] = '暂停申购'
+    if out:
+        out['feeDate'] = NOW.date().isoformat()
+    status_snip = text[max(0, text.find('交易状态')):][:120] if '交易状态' in text else ''
+    return out, status_snip
+
+
 # ---------- 市场 ----------
 def fetch_valuations():
     src = get('https://danjuanfunds.com/djapi/index_eva/dj', referer='https://danjuanfunds.com/djmodule/value-center')
@@ -276,10 +304,26 @@ def main():
             fresh = {}
             status[f'fund:{code}'] = f'failed: {e}'
         f = merge(base, fresh)
-        # 静态字段始终以 seed 为准（费率、任职、公告提示由人维护）
-        for k in ('mgmtFee', 'custFee', 'salesFee', 'managerSince', 'index', 'notes', 'share', 'limit', 'limitDate'):
+        # 人工维护的字段以 seed 为准（任职起始、跟踪指数、公告提示、份额类别）
+        for k in ('managerSince', 'index', 'notes', 'share'):
             if k in seed_funds.get(code, {}):
                 f[k] = seed_funds[code][k]
+        # 费率和限购：优先用天天基金费率页抓到的；抓不到时用上次的，再没有才用 seed
+        try:
+            fees, snip = fetch_fees(code)
+            status[f'fee:{code}'] = 'ok' if fees.get('mgmtFee') is not None else f'failed: 没解析到管理费 {snip[:60]}'
+            if fees.get('limit') is None and 'limit' in fees:
+                fees.pop('limit')
+            f = merge(f, fees)
+            if fees.get('mgmtFee') is not None and 'buyCap' not in fees and fees.get('buyStatus') != '暂停申购':
+                f.pop('limit', None); f.pop('buyCap', None)   # 费率页没写限购，说明现在不限购
+            if snip:
+                f['statusText'] = snip.strip()
+        except Exception as e:  # noqa: BLE001
+            status[f'fee:{code}'] = f'failed: {e}'
+            for k in ('mgmtFee', 'custFee', 'salesFee', 'limit', 'limitDate'):
+                if k not in f and k in seed_funds.get(code, {}):
+                    f[k] = seed_funds[code][k]
         f['code'] = code
         funds.append(f)
         time.sleep(0.5)
