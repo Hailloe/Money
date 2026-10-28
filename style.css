@@ -322,3 +322,4 @@ td .cellname .tag{flex:none}
 .calm-fund{display:grid;gap:6px;padding-bottom:10px;border-bottom:.5px solid var(--line)}
 .calm-fund:last-of-type{border-bottom:0}
 @media (min-width:1101px){.calm-card.span2{grid-column:1/-1}}
+.calm-rule{background:var(--brand-soft);border-radius:8px;padding:8px 10px}

@@ -1040,9 +1040,13 @@ function calmCard(A, compact) {
 function calmChecklist(A, code) {
   const it = A.items.find(i => i.code === code); if (!it) return '';
   const name = esc(it.fund ? it.fund.short || it.fund.name : it.name), loss = Math.min(0, it.profit);
+  const adv = (A.advice.find(x => x.code === code) || {}).adv;
+  const ruleSell = adv && (adv.k === 'sell' || adv.k === 'swap') && adv.amt ? `<p class="calm-rule">规则这个月本来就让你${esc(adv.t)} ${fmt(adv.amt)}，按那个分批做就好。下面说的是在这之外再多卖。</p>` : '';
+  const q1 = it.cat === 'bond' ? '这笔钱 3 年内要用吗？债券基金本来就是放稳钱的地方，短期波动一般不大；要用的话按需分批取，不用一次全卖。'
+    : `这笔钱 3 年内要用吗？不用的话，现在的下跌和你没有关系；要用的话，这笔钱本就不该放在股票基金里：到“我的 → 风险测评”重做，系统会分 ${C.rules.sellMonths} 个月转到债券和余额宝。`;
   return `<div class="checklist">
-    <p><b>卖掉${name}之前，先回答 3 个问题：</b></p>
-    <ol><li>这笔钱 3 年内要用吗？不用的话，现在的下跌和你没有关系；要用的话，这笔钱本就不该放在股票基金里：到“我的 → 风险测评”重做，系统会分 ${C.rules.sellMonths} 个月转到债券和余额宝。</li>
+    ${ruleSell}<p><b>卖掉${name}之前，先回答 3 个问题：</b></p>
+    <ol><li>${q1}</li>
       <li>买它的理由变了吗？（看基金详情里的“我的判断”）理由没变，就不该因为价格下跌而卖。</li>
       <li>如果再跌 10%，你会更想卖还是更想买？如果是更想卖，问题在配置太激进，而不在这只基金。</li></ol>
     ${loss < 0 ? `<p>现在卖掉，等于把 <b class="down">${fmt(-loss)}</b> 的账面亏损变成真亏；如果以后涨回来，也和你没关系了。</p>` : '<p>这只现在还没亏，但卖掉就错过了以后便宜价位的定投。</p>'}
