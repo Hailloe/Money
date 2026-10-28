@@ -1,0 +1,38 @@
+# 每个交易日北京时间 16:40、21:40 自动更新基金数据（净值一般在 19:00–22:00 公布），也可以在 Actions 页面手动点 "Run workflow"。
+name: 更新基金数据
+
+on:
+  schedule:
+    - cron: '40 8 * * 1-5'
+    - cron: '40 13 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 抓取数据
+        run: python3 scripts/update_data.py
+      - name: 提交更新
+        run: |
+          git config user.name "money-bot"
+          git config user.email "money-bot@users.noreply.github.com"
+          git add data/data.json
+          if git diff --cached --quiet; then
+            echo "数据没有变化"
+          else
+            git commit -m "数据更新 $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')"
+            git push
+          fi

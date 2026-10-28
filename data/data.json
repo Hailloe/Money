@@ -1,0 +1,99 @@
+{
+ "updated": "2026-08-25 00:00",
+ "market": {
+  "hs300": {
+   "pe": 14.34,
+   "pePct10y": 89,
+   "date": "2026-07-29"
+  },
+  "divLowVol": {
+   "pe": 8.17,
+   "dy": 4.42,
+   "date": "2026-08-04"
+  },
+  "cgb10y": {
+   "yield": 1.68,
+   "date": "2026-08-25"
+  },
+  "bondNote": "2026 年长端利率上行，接近一半的中长期纯债基金今年没有赚到钱，所以债券部分以短久期为主。",
+  "hs300Hist": [],
+  "divLowVolHist": []
+ },
+ "funds": [
+  {
+   "code": "000198",
+   "name": "天弘余额宝货币",
+   "cat": "cash",
+   "scaleYi": null
+  },
+  {
+   "code": "007901",
+   "name": "汇添富中短债A",
+   "cat": "bond",
+   "scaleYi": 23.68,
+   "scaleDate": "2026-06-30",
+   "inception": "2020-04-09",
+   "manager": "徐光"
+  },
+  {
+   "code": "217022",
+   "name": "招商产业债券A",
+   "cat": "bond",
+   "scaleYi": null
+  },
+  {
+   "code": "006131",
+   "name": "华泰柏瑞沪深300ETF联接C",
+   "cat": "index",
+   "index": "沪深300",
+   "scaleYi": 33.58,
+   "scaleDate": "2026-06-30",
+   "mgmtFee": 0.15,
+   "custFee": 0.05,
+   "inception": "2018-07-02"
+  },
+  {
+   "code": "022459",
+   "name": "易方达中证A500ETF联接A",
+   "cat": "index",
+   "index": "中证A500",
+   "inception": "2024-10-25"
+  },
+  {
+   "code": "007466",
+   "name": "华泰柏瑞中证红利低波动ETF联接A",
+   "cat": "div",
+   "index": "中证红利低波动",
+   "scaleYi": 65.66,
+   "scaleDate": "2026-06-30",
+   "mgmtFee": 0.15,
+   "custFee": 0.05,
+   "inception": "2019-07-15",
+   "notes": "2026年7月起暂停单日超1000万元的大额申购，普通投资者不受影响。"
+  },
+  {
+   "code": "163406",
+   "name": "兴全合润混合A",
+   "cat": "active",
+   "manager": "谢治宇",
+   "managerSince": "2013-01",
+   "scaleYi": 238.95,
+   "scaleDate": "2026-06-30",
+   "ret1y": 35.41,
+   "ret3y": 41.12,
+   "retYtd": 7.41
+  },
+  {
+   "code": "161005",
+   "name": "富国天惠成长混合A",
+   "cat": "active",
+   "manager": "朱少醒",
+   "managerSince": "2005-11",
+   "scaleYi": 185.82,
+   "scaleDate": "2026-06-30",
+   "ret1y": 21.77,
+   "ret3y": 13.04,
+   "retDate": "2026-07-31"
+  }
+ ]
+}
