@@ -949,13 +949,13 @@ const STRESS = [
   { n: '大跌', d: '几年一次的明显下跌', f: { index: 25, div: 18, overseas: 25, active: 30, bond: 2, cash: 0 } },
   { n: '熊市', d: '十年一两次的大熊市，按各类历史上的大跌幅度', f: Object.fromEntries(C.cats.map(c => [c.k, c.dd])) }
 ];
-function curvePoints(f) { return (f && Array.isArray(f.curve) ? f.curve : []).filter(p => Array.isArray(p) && p.length === 2 && p[1] > 0); }
+function curvePoints(f) { return (f && Array.isArray(f.curve) ? f.curve : []).filter(p => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p[0]) && !isNaN(Date.parse(p[0])) && Number.isFinite(p[1]) && p[1] > 0); }
 /* 当前距近一年最高点的回撤 */
 function currentDrawdown(f) {
   const c = curvePoints(f); if (c.length < 10) return null;
   const last = c[c.length - 1], from = new Date(Date.parse(last[0]) - 365 * 86400000).toISOString().slice(0, 10);
   const hi = Math.max(...c.filter(p => p[0] >= from).map(p => p[1]));
-  return { dd: (last[1] / hi - 1) * 100, date: last[0] };
+  return { dd: Math.round((last[1] / hi - 1) * 1000) / 10, date: last[0] };   // 和后台盯盘一样保留 1 位小数再比较
 }
 /* 过去 3 年里，跌幅超过 line% 的几段下跌：最深跌多少、多久回到原来的高点 */
 function drawdownEpisodes(f, line) {
@@ -989,7 +989,7 @@ function stressCard(A) {
 }
 function calmAlerts(A) {
   const held = new Set(A.items.map(i => i.code));
-  return FUNDS.filter(f => (f.pick || held.has(f.code)) && DD_LINE[f.cat]).map(f => ({ f, cur: currentDrawdown(f), held: held.has(f.code), adv: (A.advice.find(x => x.code === f.code) || {}).adv }))
+  return FUNDS.filter(f => (held.has(f.code) || (f.pick && A.T[f.cat] > 0 && !(P.prefs.noActive && f.cat === 'active'))) && DD_LINE[f.cat]).map(f => ({ f, cur: currentDrawdown(f), held: held.has(f.code), adv: (A.advice.find(x => x.code === f.code) || {}).adv }))
     .filter(x => x.cur && x.cur.dd <= -DD_LINE[x.f.cat]).sort((a, b) => (b.held - a.held) || (a.cur.dd - b.cur.dd));
 }
 /* 一只正在下跌的基金：历史记录 + 该做什么（和规则引擎的建议保持一致） */
