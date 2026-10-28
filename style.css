@@ -303,3 +303,12 @@ td .cellname .tag{flex:none}
 .warnbox{background:var(--warn-soft)}
 @media (max-width:899px){.pickfrom summary{min-height:44px}}
 .btn[hidden]{display:none}
+.goal{display:grid;gap:6px}
+.goaltrack{position:relative;height:8px;border-radius:4px;background:var(--fill)}
+.goaltrack .band{position:absolute;top:0;bottom:0;background:var(--down);opacity:.45;border-radius:4px}
+.goaltrack .gmark{top:-5px}
+.ledgerform{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:10px;align-items:end}
+@media (max-width:700px){.ledgerform{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ledgerform .btn{grid-column:1/-1}}
+.icon-btn.sm{width:32px;height:32px;display:inline-grid;vertical-align:middle;margin-left:6px}
+@media (max-width:899px){.icon-btn.sm{width:44px;height:44px}}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
