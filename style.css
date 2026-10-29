@@ -379,4 +379,6 @@ td .codeline{margin-top:2px}
   table.cmp td:first-child,table.cmp td[data-l="评分"]{grid-column:1/-1;display:block}
   table.cmp td[data-l]::before{content:attr(data-l);color:var(--muted);font-size:12px}
   table.cmp td[data-l="评分"]::before{display:block;margin-bottom:2px}
+  table.cmp tr.best{background:var(--brand-soft);border-radius:10px;padding:10px;border-top:0;margin:4px 0}
+  table.cmp tr.best td{background:none}
 }

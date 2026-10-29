@@ -290,6 +290,7 @@ function buyHow(f, tot) {
   if (wk >= MIN_BUY && wk <= cap) return `每天摊下来不到 ${MIN_BUY} 元，支付宝可能设不了每日定投：设“每周定投” ${fmt(wk)}，一个月大约买 ${fmt(wk * 4)}（以支付宝显示的起购金额为准）`;
   // 每次至少 10 元：次数取四舍五入，合计和计划差不到半次（几块钱），比计划多也不用补、少也不用追
   const per = Math.min(cap, Math.max(MIN_BUY, Math.ceil(tot / Math.ceil(tot / cap)))), days = Math.max(1, Math.round(tot / per));
+  if (days === 1) return `买一次 ${fmt(per)} 就行（每天最多 ${fmt(cap)}），和计划差几块钱没关系`;
   return `这个月分 ${days} 天手动买，每次 ${fmt(per)}（每天最多 ${fmt(cap)}），合计约 ${fmt(days * per)}，和计划差几块钱没关系；买不进的就算了`;
 }
 const capNote = (f, amt) => tightCap(f) && amt > f.buyCap ? `每天最多买 ${fmt(f.buyCap)}：${buyHow(f, amt)}` : '';
@@ -738,7 +739,7 @@ function capLine(A, f, where) {
   const tot = A.capTotal[f.code] || 0; if (tot < 1) return '';
   const inRe = A.reinvest.some(r => r.fund.code === f.code && r.amt >= 1), planAmt = ((A.plan.find(p => p.fund.code === f.code) || {}).amt) || 0;
   if (where === 'plan' && inRe) return `<div class="sub">限购，怎么买见下面“本月多出来的钱怎么买”</div>`;
-  if (tot <= f.buyCap) return `<div class="sub">每天最多买 ${fmt(f.buyCap)}，一次买完就行</div>`;
+  if (tot <= f.buyCap) return `<div class="sub">每天最多买 ${fmt(f.buyCap)}。${buyHow(f, tot)}</div>`;
   return `<div class="sub">${where === 'reinvest' && planAmt >= 1 ? `本月合计要买 ${fmt(tot)}（已含定投计划的 ${fmt(planAmt)}）。` : ''}${buyHow(f, tot)}</div>`;
 }
 function planNote(A) {
@@ -990,7 +991,7 @@ function viewFund(code, A) {
       ${hold ? `<div class="why">${hold.adv.why.map(w => `<span>${esc(w)}</span>`).join('')}</div>${hold.adv.amt ? `<div class="bigamt">${amtLine(hold.adv)}</div>` : ''}`
         : `<p>你没有持有它，它也不在推荐组合里。${sig.top ? '现在估值很贵，不建议买。' : '要买同类的话，优先买推荐的那只。'}</p>`}
       ${f.cat === 'index' || f.cat === 'active' ? (() => { const own = f.cat === 'index' && f.val && SIGV[f.val] && M[f.val] ? M[f.val].pePct10y : idxPct; return `<div class="temp"><span>${esc(valText(f.cat, f))}</span>${sigChip(sig)}</div>${gaugeHTML(own)}`; })() : f.cat === 'div' ? `<div class="temp"><span>息差 ${spread == null ? '—' : spread.toFixed(2) + ' 个点'}</span>${sigChip(sig)}</div>` : f.cat === 'overseas' ? `<div class="temp"><span>${valText('overseas', f)}</span>${sigChip(sig)}</div>${gaugeHTML(M[f.val] && M[f.val].pePct10y)}` : ''}
-      ${f.buyCap >= BIG_CAP ? `<p class="note">每天最多买 ${fmt(f.buyCap)}，正常定投不受影响。</p>` : tightCap(f) ? `<p class="note">限购：每天最多买 ${fmt(f.buyCap)}（天天基金，${esc(f.feeDate || '')} 查到），一个月大约最多 ${fmt(monthCap(f))}，买不进去的钱这个月转去买其他缺的类别。支付宝里的额度可能和这里不一样，以支付宝显示为准。${(A.capTotal[f.code] || 0) >= 1 ? `本月：<b>${A.capTotal[f.code] <= f.buyCap ? `一次买 ${fmt(A.capTotal[f.code])} 就行` : buyHow(f, A.capTotal[f.code])}</b>。` : ''}</p>${DAILY_HOWTO}` : f.buyStatus === '暂停申购' ? '<p class="note">这只现在暂停申购，买不了。等基金公司恢复，每天的数据更新会自动发现。</p>' : ''}
+      ${f.buyCap >= BIG_CAP ? `<p class="note">每天最多买 ${fmt(f.buyCap)}，正常定投不受影响。</p>` : tightCap(f) ? `<p class="note">限购：每天最多买 ${fmt(f.buyCap)}（天天基金，${esc(f.feeDate || '')} 查到），一个月大约最多 ${fmt(monthCap(f))}，买不进去的钱这个月转去买其他缺的类别。支付宝里的额度可能和这里不一样，以支付宝显示为准。${(A.capTotal[f.code] || 0) >= 1 ? `本月：<b>${buyHow(f, A.capTotal[f.code])}</b>。` : ''}</p>${DAILY_HOWTO}` : f.buyStatus === '暂停申购' ? '<p class="note">这只现在暂停申购，买不了。等基金公司恢复，每天的数据更新会自动发现。</p>' : ''}
     </section>
   </div>
   <div class="grid2">
