@@ -368,3 +368,15 @@ td .cellname .tag{flex:none}
 .copybtn{white-space:nowrap}
 td .codeline{margin-top:2px}
 .calmmini{text-decoration:none;color:inherit;display:flex}
+/* 同类对比表：手机上每只基金一张小卡片，不用横着滑 */
+@media (max-width:560px){
+  .tbox:has(table.cmp){overflow:visible}
+  table.cmp,table.cmp tbody{display:block;width:100%}
+  table.cmp thead{display:none}
+  table.cmp tr{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 0;border-top:.5px solid var(--line)}
+  table.cmp tr:first-child{border-top:0}
+  table.cmp td{display:flex;justify-content:space-between;gap:8px;padding:0;border:0;text-align:left;font-size:13px}
+  table.cmp td:first-child,table.cmp td[data-l="评分"]{grid-column:1/-1;display:block}
+  table.cmp td[data-l]::before{content:attr(data-l);color:var(--muted);font-size:12px}
+  table.cmp td[data-l="评分"]::before{display:block;margin-bottom:2px}
+}

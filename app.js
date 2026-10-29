@@ -280,6 +280,7 @@ const MIN_BUY = 10;   // 支付宝很多基金一次最少买 10 元（也有 1 
 /* 限购基金这个月怎么买：每日定投金额够 10 元就设每日定投；不够就分几天手动买，每次 10 元 */
 function buyHow(f, tot) {
   const cap = f.buyCap;
+  if (tot < MIN_BUY) return `这个月只要买 ${fmt(Math.ceil(tot))}，可能低于支付宝的起购额（很多基金 ${MIN_BUY} 元起）：能买就买，买不了就这个月不买，不用凑`;
   if (tot <= cap) return `一次买 ${fmt(Math.ceil(tot))} 就行`;
   const d = dailyAmt(f, tot);
   if (d >= MIN_BUY) return `在支付宝设“每日定投” ${fmt(d)} 就行，一个月大约买 ${fmt(d * TRADE_DAYS)}`;
@@ -287,8 +288,9 @@ function buyHow(f, tot) {
   // 每天摊下来不到 10 元：能用每周定投就用（一个月约 4 次），不然就按每天额度分几天手动买
   const wk = Math.ceil(tot / 4);
   if (wk >= MIN_BUY && wk <= cap) return `每天摊下来不到 ${MIN_BUY} 元，支付宝可能设不了每日定投：设“每周定投” ${fmt(wk)}，一个月大约买 ${fmt(wk * 4)}（以支付宝显示的起购金额为准）`;
-  const days = Math.ceil(tot / cap), per = Math.min(cap, Math.max(MIN_BUY, Math.ceil(tot / days)));
-  return `这个月分 ${days} 天手动买，每次 ${fmt(per)}（每天最多 ${fmt(cap)}），买不进的就算了`;
+  // 每次至少 10 元：次数取四舍五入，合计和计划差不到半次（几块钱），比计划多也不用补、少也不用追
+  const per = Math.min(cap, Math.max(MIN_BUY, Math.ceil(tot / Math.ceil(tot / cap)))), days = Math.max(1, Math.round(tot / per));
+  return `这个月分 ${days} 天手动买，每次 ${fmt(per)}（每天最多 ${fmt(cap)}），合计约 ${fmt(days * per)}，和计划差几块钱没关系；买不进的就算了`;
 }
 const capNote = (f, amt) => tightCap(f) && amt > f.buyCap ? `每天最多买 ${fmt(f.buyCap)}：${buyHow(f, amt)}` : '';
 const DAILY_HOWTO = '<details class="pickfrom"><summary>“每日定投”怎么设</summary><ol class="howto"><li>支付宝搜基金代码，进基金页</li><li>点“定投”，频率选“每日”</li><li>填金额，确认</li></ol><p class="note">只在交易日扣款，周末和节假日不扣，一个月大约扣 20 次，设好就不用管。</p></details>';
@@ -921,8 +923,8 @@ function compareTable(k) {
   const fs = FUNDS.filter(f => f.cat === k).sort((a, b) => groupOf(a).localeCompare(groupOf(b)) || a.rank - b.rank);
   const wk = Object.keys(W[k]).map(x => MNAME[x] + ' ' + Math.round(W[k][x] * 100) + '%').join(' · ');
   const note = k === 'overseas' ? '海外按跟踪的指数分组打分：标普500 只和标普500 比，纳指100 只和纳指100 比。' : '';
-  return `<div class="tbox"><table><thead><tr><th>基金</th><th style="min-width:120px">评分</th><th class="r">年费率</th><th class="r">规模(亿)</th><th class="r">近3年</th><th class="r">最大回撤</th></tr></thead><tbody>
-    ${fs.map(f => `<tr class="${f.pick ? 'best' : ''}"><td><a href="#fund-${f.code}" class="plain strong">${esc(f.short || f.name)}</a> ${f.pick ? '<span class="tag pick">推荐</span>' : ''}<div class="sub n">${f.code}</div></td><td>${scoreBar(f.score)}</td><td class="r">${totalFee(f) == null ? '—' : totalFee(f).toFixed(2) + '%'}</td><td class="r">${f.scaleYi == null ? '—' : f.scaleYi.toFixed(0)}</td><td class="r ${cls(f.ret3y)}">${pct(f.ret3y)}</td><td class="r">${f.maxDd3y == null ? '—' : '−' + Math.abs(f.maxDd3y).toFixed(1) + '%'}</td></tr>`).join('')}
+  return `<div class="tbox"><table class="cmp"><thead><tr><th>基金</th><th style="min-width:120px">评分</th><th class="r">年费率</th><th class="r">规模(亿)</th><th class="r">近3年</th><th class="r">最大回撤</th></tr></thead><tbody>
+    ${fs.map(f => `<tr class="${f.pick ? 'best' : ''}"><td><a href="#fund-${f.code}" class="plain strong">${esc(f.short || f.name)}</a> ${f.pick ? '<span class="tag pick">推荐</span>' : ''}<div class="sub n">${f.code}</div></td><td data-l="评分">${scoreBar(f.score)}</td><td class="r" data-l="年费率">${totalFee(f) == null ? '—' : totalFee(f).toFixed(2) + '%'}</td><td class="r" data-l="规模(亿)">${f.scaleYi == null ? '—' : f.scaleYi.toFixed(0)}</td><td class="r ${cls(f.ret3y)}" data-l="近3年">${pct(f.ret3y)}</td><td class="r" data-l="最大回撤">${f.maxDd3y == null ? '—' : '−' + Math.abs(f.maxDd3y).toFixed(1) + '%'}</td></tr>`).join('')}
   </tbody></table></div><p class="note">${note}年费率＝管理费＋托管费＋销售服务费，每天从净值里扣，不用另付。A 类买入时收一次申购费、没有销售服务费，C 类相反；打算拿一年以上选 A 更省。</p><p class="note">评分权重：${wk}。缺数据的项按中间分计。推荐基金不一定分数最高，理由见基金详情里的“我的判断”。</p>`;
 }
 
