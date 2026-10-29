@@ -280,7 +280,7 @@ const MIN_BUY = 10;   // 支付宝很多基金一次最少买 10 元（也有 1 
 /* 限购基金这个月怎么买：每日定投金额够 10 元就设每日定投；不够就分几天手动买，每次 10 元 */
 function buyHow(f, tot) {
   const cap = f.buyCap;
-  if (tot < MIN_BUY) return `这个月只要买 ${fmt(Math.ceil(tot))}，可能低于支付宝的起购额（很多基金 ${MIN_BUY} 元起）：能买就买，买不了就这个月不买，不用凑`;
+  if (Math.ceil(tot) < MIN_BUY) return `这个月只要买 ${fmt(Math.ceil(tot))}，可能低于支付宝的起购额（很多基金 ${MIN_BUY} 元起）：能买就买，买不了就这个月不买，不用凑`;
   if (tot <= cap) return `一次买 ${fmt(Math.ceil(tot))} 就行`;
   const d = dailyAmt(f, tot);
   if (d >= MIN_BUY) return `在支付宝设“每日定投” ${fmt(d)} 就行，一个月大约买 ${fmt(d * TRADE_DAYS)}`;
