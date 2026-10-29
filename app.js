@@ -282,7 +282,8 @@ function buyHow(f, tot) {
   const cap = f.buyCap;
   if (tot <= cap) return `一次买 ${fmt(Math.ceil(tot))} 就行`;
   const d = dailyAmt(f, tot);
-  if (d >= MIN_BUY || cap < MIN_BUY) return `在支付宝设“每日定投” ${fmt(d)} 就行，一个月大约买 ${fmt(d * TRADE_DAYS)}`;
+  if (d >= MIN_BUY) return `在支付宝设“每日定投” ${fmt(d)} 就行，一个月大约买 ${fmt(d * TRADE_DAYS)}`;
+  if (cap < MIN_BUY) return `每天最多只能买 ${fmt(cap)}，以支付宝显示的起购金额为准；买不进就算了`;
   // 每天摊下来不到 10 元：能用每周定投就用（一个月约 4 次），不然就按每天额度分几天手动买
   const wk = Math.ceil(tot / 4);
   if (wk >= MIN_BUY && wk <= cap) return `每天摊下来不到 ${MIN_BUY} 元，支付宝可能设不了每日定投：设“每周定投” ${fmt(wk)}，一个月大约买 ${fmt(wk * 4)}（以支付宝显示的起购金额为准）`;
@@ -1253,9 +1254,11 @@ function viewMe() {
   </div>`;
 }
 let delArm = false, resetArm = false, homeMore = false, quizWarn = '';
+const MORE_OPEN = {};   // “更多/高级设置”展开过就保持展开，重新渲染不收起
 /* 防丢数据：数据只在这台设备的浏览器里。iPhone 的 Safari 标签页一周不打开可能被清掉；隔一个月提醒导出一次备份 */
-const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 存不了就算了 */ } };
+const LS_MEM = {};   // 浏览器不让存时，至少这次打开期间记住
+const lsGet = k => { try { return localStorage.getItem(k) || LS_MEM[k] || ''; } catch (e) { return LS_MEM[k] || ''; } };
+const lsSet = (k, v) => { LS_MEM[k] = v; try { localStorage.setItem(k, v); } catch (e) { /* 存不了就算了 */ } };
 const iosTab = () => { const ua = navigator.userAgent || ''; const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   let sa = false; try { sa = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches; } catch (e) { sa = false; } return ios && !sa; };
 const daysSince = d => /^\d{4}-\d{2}-\d{2}$/.test(d) ? Math.floor((Date.parse(today()) - Date.parse(d)) / 86400000) : Infinity;
@@ -1288,7 +1291,7 @@ function backupWarn(inMe) {
   if (!inMe && (P.example || !P.items.length || !waited || !(stale || iosTab()) || daysSince(lsGet('money.expSnooze')) < 7)) return '';
   const parts = [];
   if (iosTab()) parts.push('你是在 Safari 里打开的：一周不打开本网站，iPhone 可能会自动清掉这里的数据。从主屏幕打开更安全，但主屏幕上的和 Safari 里的数据是分开的，所以按这个顺序做：① 先点“导出备份” ② 再点“分享 → 添加到主屏幕” ③ 从主屏幕打开，到“我的 → 备份与换设备 → 导入备份”导入一次。');
-  parts.push(last ? `上次导出备份是 ${cnDate(last) || last}${stale ? `，已经 ${age} 天了，建议再导出一份` : ''}。` : '还没导出过备份。数据只在这台设备上，清理浏览器、换手机就没了。');
+  parts.push(last && /^\d{4}-\d{2}-\d{2}$/.test(last) ? `上次导出备份是 ${cnDate(last)}${stale ? `，已经 ${age} 天了，建议再导出一份` : ''}。` : '还没导出过备份。数据只在这台设备上，清理浏览器、换手机就没了。');
   if (inMe) return `<p class="note${stale || iosTab() ? ' warnline' : ''}">${parts.join('')}</p>`;
   return `<div class="banner warn"><span>${parts.join('')}</span><div class="btnrow"><button class="btn sm" type="button" data-export>导出备份（30 秒）</button><button class="btn sm ghost" type="button" data-snooze>以后再说</button></div></div>`;
 }
@@ -1815,6 +1818,7 @@ function renderInner(force) {
   }
   if (h.startsWith('fund-')) loadLive(h.slice(5));
   const hm = $('#home-more'); if (hm) hm.addEventListener('toggle', () => { homeMore = hm.open; });
+  ['ana-more', 'me-more'].forEach(id => { const d = document.getElementById(id); if (!d) return; if (MORE_OPEN[id]) d.open = true; d.addEventListener('toggle', () => { MORE_OPEN[id] = d.open; }); });
   if (tab === 'holdings') bindHoldings();
   if (tab === 'analysis' && $('#ai-q')) $('#ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aiAction('ask'); } });
   if (tab === 'me') bindMe();
@@ -1921,7 +1925,8 @@ function bindMe() {
     if (!r) { $('#quiz-msg').textContent = '还有题没选。'; return; }
     // 降档（尤其是改成“1 年内要用”）会让系统分批卖出股票基金。大跌时最容易冲动这么改，所以多问一次
     const old = P.risk, key = ans.join('');
-    if (old && levelIndex(r.k) < levelIndex(old.k) && quizWarn !== key) {
+    const warnShown = $('#quiz-warn') && !$('#quiz-warn').hidden;
+    if (old && levelIndex(r.k) < levelIndex(old.k) && !(quizWarn === key && warnShown)) {
       quizWarn = key; const falling = calmAlerts(analyze()).some(x => x.held);
       const box = $('#quiz-warn'); box.hidden = false;
       box.innerHTML = `<p><b>${r.k === 'short' ? '改成“1 年内要用”，系统会让你在 3 个月内把股票基金都卖掉，换成债券。' : `这样会从“${C.levels[levelIndex(old.k)].n}”降到“${C.levels[levelIndex(r.k)].n}”，系统会分批卖出一部分股票基金。`}</b></p>
