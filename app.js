@@ -276,7 +276,15 @@ const BIG_CAP = 10000;   // 每天能买 1 万以上的“限大额”，对正�
 const monthCap = f => f && f.buyCap > 0 ? (f.buyCap >= BIG_CAP ? Infinity : f.buyCap * TRADE_DAYS) : (f && f.buyStatus === '暂停申购' ? 0 : Infinity);
 const tightCap = f => f && f.buyCap > 0 && f.buyCap < BIG_CAP;
 const dailyAmt = (f, total) => Math.min(f.buyCap, Math.ceil(total / TRADE_DAYS));
-const capNote = (f, amt) => tightCap(f) && amt > f.buyCap ? `每天最多买 ${fmt(f.buyCap)}：在支付宝设“每日定投” ${fmt(dailyAmt(f, amt))}，一个月大约买满 ${fmt(dailyAmt(f, amt) * TRADE_DAYS)}` : '';
+const MIN_BUY = 10;   // 支付宝很多基金一次最少买 10 元（也有 1 元起的，以支付宝显示为准）
+/* 限购基金这个月怎么买：每日定投金额够 10 元就设每日定投；不够就分几天手动买，每次 10 元 */
+function buyHow(f, tot) {
+  const d = dailyAmt(f, tot);
+  if (d >= MIN_BUY || f.buyCap < MIN_BUY) return `在支付宝设“每日定投” ${fmt(d)} 就行，一个月大约买 ${fmt(d * TRADE_DAYS)}`;
+  const per = Math.min(f.buyCap, MIN_BUY), days = Math.ceil(tot / per);
+  return `每天摊下来不到 ${MIN_BUY} 元，支付宝可能设不了每日定投。这个月分 ${days} 天手动买，每次 ${fmt(per)}，买不进就算了（以支付宝显示的起购金额和限额为准）`;
+}
+const capNote = (f, amt) => tightCap(f) && amt > f.buyCap ? `每天最多买 ${fmt(f.buyCap)}：${buyHow(f, amt)}` : '';
 const DAILY_HOWTO = '<details class="pickfrom"><summary>“每日定投”怎么设</summary><ol class="howto"><li>支付宝搜基金代码，进基金页</li><li>点“定投”，频率选“每日”</li><li>填金额，确认</li></ol><p class="note">只在交易日扣款，周末和节假日不扣，一个月大约扣 20 次，设好就不用管。</p></details>';
 function analyze() {
   const T = targets(); const R = C.rules;
@@ -429,7 +437,7 @@ function analyze() {
     else if (!f.pick && redirect[groupOf(f)] !== f && best && groupOf(best) === groupOf(f) && isFinite(monthCap(best)) && best.score - f.score >= R.swapScoreGap && !over(i.cat))
       a = { k: 'hold', t: '持有', amt: 0, why: [`推荐的 ${best.short || best.name} 更好，但它现在${monthCap(best) === 0 ? '暂停申购' : `限购（每天最多 ${fmt(best.buyCap || 0)}）`}，换不过去。这只先拿着，跟踪的是同一个指数，效果差不多；新钱按“本月定投计划”买推荐的那只。`] };
     else if (!f.pick && redirect[groupOf(f)] !== f && best && best.score - f.score >= R.swapScoreGap && groupOf(best) === groupOf(f) && !KEYDATA.some(k => (f.missing || []).includes(MNAME[k]) || (best.missing || []).includes(MNAME[k])))
-      a = sell('换成更好的', [`跟踪同一个指数的基金里，它的综合评分 ${f.score} 分，推荐的 ${best.short || best.name} 是 ${best.score} 分（看费率、规模、3年收益和回撤，不看短期涨幅）。`], `卖出的钱买 ${best.short || best.name}。持有不满 7 天卖出要交 1.5% 赎回费。`);
+      a = sell('换成更好的', [`跟踪同一个指数的基金里，它的综合评分 ${f.score} 分，推荐的 ${best.short || best.name} 是 ${best.score} 分（看费率、规模、3年收益和回撤，不看短期涨幅）。`], `卖出的钱买 ${best.short || best.name}。`);
     else if (c.eq && sig.top && pp >= R.takeProfitPct && trendOn() && trendOf(f) === 'up' && !((valPct(i.cat, f) ?? 0) >= C.rules.trend.hardPct) && !(dev2[i.cat] >= C.rules.trend.widen))
       a = { k: 'hold', t: '趋势持有', amt: 0, why: [`估值${sig.t}，你这只赚了 ${pp.toFixed(0)}%，本来该分批止盈。但涨势还在（价格在长期均线之上，均线还在往上走），你打开了趋势规则，所以先拿着。`, `等价格跌破长期均线，或者估值到近10年 ${C.rules.trend.hardPct}% 分位，再按规则分批卖。这个月不再买这只，这份钱留在银行卡。`] };
     else if (c.eq && sig.top && pp >= R.takeProfitPct) {
@@ -449,11 +457,12 @@ function analyze() {
       a = { k: 'stop', t: '暂停买入', amt: 0, why: [`这个月计划里买不了它（限购、暂停申购或已经满 ${maxN} 只），拿着不动。现在估值${sig.t}（${valText(i.cat, f)}）。`, pp < R.takeProfitPct ? (pp < 0 ? `目前亏 ${Math.abs(pp).toFixed(0)}%，不要在贵的时候加仓摊低成本，拿着等。` : `目前赚 ${pp.toFixed(0)}%，没到 ${R.takeProfitPct}% 的止盈线，不用卖。`) : ''] };
     } else {
       const p = planFor(i.code), low = dev2[i.cat] <= -R.rebalanceBand;
-      if (p && Math.round(p.amt) >= 1 && i.cat !== 'cash') a = { k: 'buy', t: low ? '加仓' : '按计划定投', amt: Math.round(p.amt), why: [low ? `${c.n}占 ${w2[i.cat].toFixed(0)}%，比目标 ${T[i.cat]}% 少 ${Math.abs(dev2[i.cat]).toFixed(0)} 个百分点，估值${sig.t}。` : `比例正常，估值${sig.t}。`, `本月买入 ${fmt(p.amt)}${p.m !== 1 && p.note !== '限购' ? `（平时的 ${p.m} 倍）` : ''}。${tightCap(f) ? `这只限购，每天最多买 ${fmt(f.buyCap)}，设成“每日定投”最省事。` : ''}`] };
+      if (p && Math.round(p.amt) >= 1 && i.cat !== 'cash') a = { k: 'buy', t: low ? '加仓' : '按计划定投', amt: Math.round(p.amt), why: [low ? `${c.n}占 ${w2[i.cat].toFixed(0)}%，比目标 ${T[i.cat]}% 少 ${Math.abs(dev2[i.cat]).toFixed(0)} 个百分点，估值${sig.t}。` : `比例正常，估值${sig.t}。`, `本月买入 ${fmt(p.amt)}${p.m !== 1 && p.note !== '限购' ? `（平时的 ${p.m} 倍）` : ''}。${tightCap(f) ? `这只限购，每天最多买 ${fmt(f.buyCap)}。${p.amt <= f.buyCap ? '一次买完就行。' : buyHow(f, p.amt) + '。'}` : ''}`] };
       else if (i.cat === 'cash') a = { k: 'hold', t: '持有', amt: 0, why: [extra > 0 ? `本月便宜的类别要多买，从余额宝里取 ${fmt(extra)}。` : p && Math.round(p.amt) >= 1 ? `本月存入 ${fmt(p.amt)}。` : '比例正常，不用操作。'] };
 
       else a = { k: 'hold', t: '持有', amt: 0, why: [f.pick ? '比例正常，不用操作。' : redirect[groupOf(f)] === f ? `你已经有 ${maxN} 只了，这一类就用它，不再多开一只推荐基金。比例正常，不用操作。` : `不是推荐基金，但和推荐的 ${best ? best.short || best.name : ''} 差距不大，可以继续拿着，新钱买推荐的那只。`] };
     }
+    if ((a.k === 'sell' || a.k === 'swap') && a.amt >= 1) a.why.push(`卖出前看一眼：持有不满 7 天卖要交 1.5% 赎回费，7 天以上一般在 0.5% 以内（以支付宝显示为准）。${i.cat === 'overseas' ? '海外基金卖出后大约 5–8 个工作日才到账' : '一般 1–3 个工作日到账'}，到账后再按建议买。`);
     if (a.k === 'buy' && sig.top) a.why.push('估值很贵时只买平时的一半：不追高，也不完全停。估值可能贵好几年，完全停买会让钱一直闲着。');
     if (f && i.cat === 'div' && sig.conflict && a.k === 'buy') a.why.push(`注意：息差显示偏便宜，但红利低波自身估值在近10年 ${Math.round(divPct)}% 分位，已经不低，所以最多按 1 倍买。`);
     a.why = a.why.filter(Boolean);
@@ -525,7 +534,7 @@ function analyze() {
     else if (over(f.cat)) a = { k: 'hold', t: '先不买', amt: 0, why: [`${CAT[f.cat].n}已经超配，本月不买。等比例回到目标附近再开始定投。`] };
     else if (!p || Math.round(p.amt) < 1) a = { k: 'stop', t: '先不买', amt: 0, why: [`估值${sig.t}（${valText(f.cat, f)}）。等估值回落再开始定投，这部分钱先留在银行卡里。`] };
     else a = { k: 'buy', t: '开始买入', amt: Math.round(p.amt), why: [`组合里还没有这只${heldSame ? '' : `，也还没有${CAT[f.cat].n}这一类`}。估值${sig.t}，从本月开始定投 ${fmt(p.amt)}。`] };
-    if (a.k === 'buy' && tightCap(f)) a.why.push(`这只限购，每天最多买 ${fmt(f.buyCap)}。设成支付宝“每日定投”最省事，金额看“本月定投计划”。`);
+    if (a.k === 'buy' && tightCap(f)) a.why.push(`这只限购，每天最多买 ${fmt(f.buyCap)}。金额够的话设成支付宝“每日定投”最省事，具体怎么买看“本月定投计划”。`);
     return { code: f.code, fund: f, cat: f.cat, name: f.name, amount: 0, profit: 0, pp: 0, adv: a, notHeld: true };
   });
   const order = { sell: 0, swap: 1, move: 2, buy: 2, stop: 3, wait: 3, hold: 4 };
@@ -591,6 +600,8 @@ function heldExplained(sn) {
 }
 /* 改了每月金额、测评、银行卡里的钱以后，本月还没打卡的话，计划按新设置重算 */
 function unlockMonth() { if (!monthDone()) P.monthPlan = null; }
+/* 基金代码 + 复制按钮：在支付宝搜简称会出来几十只，用代码搜最准 */
+const codeChip = c => /^\d{6}$/.test(c || '') ? `<span class="codechip"><span class="n">${c}</span><button type="button" class="copybtn" data-copy="${c}" aria-label="复制代码 ${c}">复制</button></span>` : '';
 const heldLine = (A, x) => { const it = (A.live || A).items.find(i => i.code === x.code); if (!it) return ''; const c = it.amount - it.profit, q = c > 0 ? it.profit / c * 100 : 0; return `持有 ${fmt(it.amount)} · <span class="${cls(q)}">${pct(q)}</span>`; };
 const askBar = A => A.askHeld ? `<div class="banner ask"><span><b>你刚更新了持仓。</b>这是：</span><div class="btnrow"><button class="btn sm" type="button" data-ask="keep">照本月计划买完后更新的</button><button class="btn sm ghost" type="button" data-ask="relock">录入原来就有的持仓</button></div><span class="note">选第一个，本月计划保持不变，不会重复买；选第二个，按最新持仓重新算本月计划。</span></div>` : '';
 const lockNote = A => A.locked ? `<p class="note lock">本月计划在 ${esc(cnDate(A.locked) || A.locked)} 生成，已经锁定：在支付宝买完、更新持仓以后，本月的金额不会再变，不用担心重复买。${monthDone() ? '' : '<br>如果这个月还没买，只是刚录入已有的持仓，可以 <button class="linkbtn" type="button" data-relock>按最新数据重算</button>。'}</p>` : '';
@@ -720,8 +731,7 @@ function capLine(A, f, where) {
   const inRe = A.reinvest.some(r => r.fund.code === f.code && r.amt >= 1), planAmt = ((A.plan.find(p => p.fund.code === f.code) || {}).amt) || 0;
   if (where === 'plan' && inRe) return `<div class="sub">限购，每日定投金额见下面“本月多出来的钱怎么买”</div>`;
   if (tot <= f.buyCap) return `<div class="sub">每天最多买 ${fmt(f.buyCap)}，一次买完就行</div>`;
-  const d = dailyAmt(f, tot);
-  return `<div class="sub">${where === 'reinvest' && planAmt >= 1 ? `本月合计要买 ${fmt(tot)}（已含定投计划的 ${fmt(planAmt)}）。` : ''}在支付宝设“每日定投” ${fmt(d)} 就行，一个月大约买 ${fmt(d * TRADE_DAYS)}</div>`;
+  return `<div class="sub">${where === 'reinvest' && planAmt >= 1 ? `本月合计要买 ${fmt(tot)}（已含定投计划的 ${fmt(planAmt)}）。` : ''}${buyHow(f, tot)}</div>`;
 }
 function planNote(A) {
   const out = [];
@@ -754,7 +764,7 @@ function viewHome(A) {
   const checked = P.journal.find(j => j.m === mk);
   const hist = P.history.filter(h => h.total > 0).map(h => [h.d, h.total]);
   return `<div class="view">
-  ${dataAge()}${exampleBanner()}${askBar(A)}${riskBanner()}${shortBanner()}
+  ${dataAge()}${exampleBanner()}${askBar(A)}${riskNotice(A)}${riskBanner()}${shortBanner()}${backupWarn(false)}
   ${calmAlerts(A).some(x => x.held) ? `<div class="grid3">${calmCard(A, true)}</div>` : ''}
   <div class="grid3">
     <section class="hero span2" aria-label="资产总览">
@@ -772,16 +782,29 @@ function viewHome(A) {
     </section>
     <section class="card" aria-label="本月要做的事">
       <div class="card-h"><h3>本月要做的事</h3><a class="more" href="#analysis">全部 ›</a></div>
-      ${checked && ['full', 'part'].includes(checked.choice) && !P.example ? `<div class="donebox">${checked.choice === 'full' ? '<b>✓ 本月已完成</b>（全部照做）。这个月不用再买，也不用天天打开，等下个定投日就行。' : '<b>本月已打卡</b>（做了一部分）。没做的部分在下个定投日前补上就行，不用下个月买双倍。没投出去的钱，可以到“持仓 → 银行卡里等着投的钱”自己加上。'}</div>
+      ${checked && ['full', 'part'].includes(checked.choice) && !P.example ? `<div class="donebox">${checked.choice === 'full' ? '<b>✓ 本月已完成</b>（全部照做）。这个月不用再买，也不用天天打开，等下个定投日就行。' + (daysSince(lsGet('money.exp')) > 25 ? ' <button class="linkbtn" type="button" data-export>顺手导出一份备份</button>' : '') : '<b>本月已打卡</b>（做了一部分）。没做的部分在下个定投日前补上就行，不用下个月买双倍。没投出去的钱，可以到“持仓 → 银行卡里等着投的钱”自己加上。'}</div>
       <details class="pickfrom"><summary>再看一眼本月的建议</summary>` : ''}
       <div class="chiprow">${cnt('sell') ? `<span class="act sell">卖出 ${cnt('sell')}</span>` : ''}${cnt('swap') ? `<span class="act swap">换基 ${cnt('swap')}</span>` : ''}${cnt('move') ? `<span class="act move">转出 ${cnt('move')}</span>` : ''}${cnt('buy') ? `<span class="act buy">买入 ${cnt('buy')}</span>` : ''}${cnt('stop') ? `<span class="act stop">暂停 ${cnt('stop')}</span>` : ''}${cnt('hold') ? `<span class="act hold">持有 ${cnt('hold')}</span>` : ''}</div>
-      <div class="rows">${todo.slice(0, 5).map(x => `<a class="row" href="${x.fund ? '#fund-' + x.fund.code : '#analysis'}"><div class="t">${dot(x.cat)}<span class="ell">${esc(x.fund && x.fund.short || x.name)}</span></div><div class="r">${actChip(x.adv)}</div>${x.adv.amt ? `<div class="s">${amtLine(x.adv)}</div>` : ''}</a>`).join('') || '<p class="muted">这个月不用操作。</p>'}</div>
+      <div class="rows">${todo.slice(0, 5).map(x => `<a class="row" href="${x.fund ? '#fund-' + x.fund.code : '#analysis'}"><div class="t">${dot(x.cat)}<span class="ell">${esc(x.fund && x.fund.short || x.name)}</span>${codeChip(x.code)}</div><div class="r">${actChip(x.adv)}</div>${x.adv.amt ? `<div class="s">${amtLine(x.adv)}</div>` : ''}</a>`).join('') || '<p class="muted">这个月不用操作。</p>'}</div>
       ${A.freed - A.freedLeft >= 1 ? `<p class="note">另外多出来的 ${fmt(A.freed - A.freedLeft)} 要买哪几只：<a class="more" href="#analysis">买卖分析 → 本月多出来的钱怎么买 ›</a></p>` : ''}
       ${checked && ['full', 'part'].includes(checked.choice) && !P.example ? '</details>' : ''}
       <p class="note">下次定投日：每月 ${di.day} 号，${di.n === 0 ? '就是今天' : `还有 ${di.n} 天`}。${P.prefs.calDay === di.day ? '' : ` <a class="more" href="#me-cal">${P.prefs.calDay ? '定投日改了，重新加日历提醒 ›' : '加到手机日历，到日子提醒我 ›'}</a>`}</p>
     </section>
   </div>
 
+  <div class="grid2">
+    <section class="card" aria-label="本月定投">
+      <div class="card-h"><h3>本月定投 <span class="n">${fmt(A.planTotal)}</span></h3><a class="more" href="#analysis-plan">明细 ›</a></div>
+      <div class="rows">${A.plan.filter(p => p.amt >= 1).map(p => `<a class="row" href="#fund-${p.fund.code}"><div class="t">${dot(p.cat)}<span class="ell">${esc(p.fund.short || p.fund.name)}</span>${codeChip(p.fund.code)}</div><div class="r n strong">${fmt(p.amt)}</div></a>`).join('') || '<p class="muted">这个月不用定投。</p>'}</div>
+      ${planNote(A)}
+    </section>
+    <section class="card" aria-label="本月打卡">
+      <div class="card-h"><h3>本月打卡</h3><a class="more" href="#me">执行记录 ›</a></div>
+      ${checked ? `<p>这个月已打卡：<b>${esc(CHOICES[checked.choice].t)}</b>。</p>${P.prefs.calDay ? '' : '<p class="note">下个月想被提醒？<a class="more" href="#me-cal">加到手机日历 ›</a></p>'}<p class="note">系统会根据打卡记录学习你的习惯，调整股票比例和提醒。</p><button class="btn ghost sm" type="button" data-uncheck>改一下</button>`
+        : P.example ? '<p class="muted" style="font-size:13px">录入你自己的持仓以后，每月在这里打卡。</p>' : `<p class="muted" style="font-size:13px">这个月你按建议操作了吗？如实选，系统靠它了解你的习惯。</p><div class="checkin">${Object.entries(CHOICES).map(([k, v]) => `<button class="btn ghost" type="button" data-checkin="${k}">${v.t}</button>`).join('')}</div>`}
+    </section>
+  </div>
+  <details class="more-sec" id="home-more" ${homeMore ? 'open' : ''}><summary>更多：资产配置、市场温度、资产走势、年化目标</summary><div class="more-in">
   <div class="grid3">
     <section class="card" aria-label="资产配置">
       <div class="card-h"><h3>资产配置</h3><span class="sub">现在 / 目标</span></div>
@@ -797,25 +820,14 @@ function viewHome(A) {
       ${SIG.div.conflict ? '<p class="note">息差显示便宜，但红利低波自身估值已经很高，两个信号打架，按 1 倍买。</p>' : ''}
       <div class="us">${[['sp500', '标普500'], ['ndx', '纳指100']].map(([k, n]) => `<div class="temp"><span>${n} 估值分位</span>${sigChip(SIGV[k])}<span class="v n">${M[k] && M[k].pePct10y != null ? Math.round(M[k].pePct10y) + '%' : '—'}</span><span class="sub">${cnDate(M[k] && M[k].date)}</span></div>`).join('')}</div>
     </section>
-    <section class="card" aria-label="本月定投">
-      <div class="card-h"><h3>本月定投 <span class="n">${fmt(A.planTotal)}</span></h3><a class="more" href="#analysis-plan">明细 ›</a></div>
-      <div class="rows">${A.plan.filter(p => p.amt >= 1).map(p => `<a class="row" href="#fund-${p.fund.code}"><div class="t">${dot(p.cat)}<span class="ell">${esc(p.fund.short || p.fund.name)}</span></div><div class="r n strong">${fmt(p.amt)}</div></a>`).join('') || '<p class="muted">这个月不用定投。</p>'}</div>
-      ${planNote(A)}
-    </section>
-  </div>
-
-  <div class="grid3">
-    <section class="card span2" aria-label="资产走势">
+    <section class="card" aria-label="资产走势">
       <div class="card-h"><h3>资产走势</h3><span class="sub">每次更新持仓自动记录</span></div>
       ${lineChart('hist', hist, { label: '总资产走势', fmtY: v => (v / 10000).toFixed(1) + '万', fmtX: cnDate, fmtTip: p => `${cnDate(p[0])}：${fmt(p[1])}`, empty: P.example ? '录入你的真实持仓后，这里会画出总资产的变化。' : '更新两次以上持仓后，这里会画出总资产的变化。建议每月定投后更新一次。' })}
     </section>
-    <section class="card" aria-label="本月打卡">
-      <div class="card-h"><h3>本月打卡</h3><a class="more" href="#me">执行记录 ›</a></div>
-      ${checked ? `<p>这个月已打卡：<b>${esc(CHOICES[checked.choice].t)}</b>。</p>${P.prefs.calDay ? '' : '<p class="note">下个月想被提醒？<a class="more" href="#me-cal">加到手机日历 ›</a></p>'}<p class="note">系统会根据打卡记录学习你的习惯，调整股票比例和提醒。</p><button class="btn ghost sm" type="button" data-uncheck>改一下</button>`
-        : P.example ? '<p class="muted" style="font-size:13px">录入你自己的持仓以后，每月在这里打卡。</p>' : `<p class="muted" style="font-size:13px">这个月你按建议操作了吗？如实选，系统靠它了解你的习惯。</p><div class="checkin">${Object.entries(CHOICES).map(([k, v]) => `<button class="btn ghost" type="button" data-checkin="${k}">${v.t}</button>`).join('')}</div>`}
-    </section>
   </div>
   <div class="grid3">${goalCard(A)}${aiCardHome()}</div>
+  </div>  </details>
+  ${riskFoot()}
   </div>`;
 }
 
@@ -823,21 +835,11 @@ const doneBanner = () => { const j = P.journal.find(x => x.m === monthKey()); re
 function viewAnalysis(A) {
   return `<div class="view">
   ${dataAge()}${exampleBanner()}${askBar(A)}${doneBanner()}${shortBanner()}
-  <section class="card" id="sec-ai">
-    <div class="card-h"><h3>AI 解读</h3><span class="sub">DeepSeek · 只解释，不改规则</span></div>
-    ${AIS.key ? `<div class="btnrow"><button class="btn" type="button" data-ai="review">${P.aiReport ? '重新解读本月建议' : '让 AI 解读本月建议'}</button><button class="btn ghost" type="button" data-ai="stop" id="ai-stop" hidden>停止</button></div>
-    <div id="ai-out" class="ai-text" ${P.aiReport ? '' : 'hidden'}>${P.aiReport ? aiReportHTML(P.aiReport) : ''}</div>
-    <div class="addrow"><label class="field">有问题直接问（比如：为什么让我卖富国天惠？）<input id="ai-q" type="text" class="txt" maxlength="200" placeholder="输入问题，按回车"></label><button class="btn ghost" type="button" data-ai="ask">提问</button></div>
-    <div id="ai-ans" class="ai-text" hidden></div>
-    <p class="note">提问时会把你的持仓金额和本页的建议发给 DeepSeek，不发名字。</p>`
-    : '<p class="muted" style="font-size:13px">填上 DeepSeek API key，就能让 AI 用大白话解读本月建议，也能直接提问。</p><a class="btn sm" href="#me-ai">去设置</a>'}
-    <details class="pickfrom"><summary>盯盘历史提醒（${marketAlerts(3650).length} 条）</summary>${marketAlerts(3650).slice(0, 20).map(alertHTML).join('') || '<p class="note">还没有提醒。只有估值档位变化、明显回撤或数据断更时才会提醒。</p>'}</details>
-  </section>
   <section class="card" id="sec-advice">
     <div class="card-h"><h3>每只基金的操作建议</h3><span class="sub">最需要处理的排在前面</span></div>
     <div class="rows">${A.advice.map(x => `
       <div class="row static">
-        <div class="t">${dot(x.cat)}${x.fund ? `<a href="#fund-${x.fund.code}" class="plain">${esc(x.fund.short || x.name)}</a>` : esc(x.name)}${x.notHeld ? '<span class="tag">未持有</span>' : ''}${x.fund && x.fund.pick ? '<span class="tag pick">推荐</span>' : ''}</div>
+        <div class="t">${dot(x.cat)}${x.fund ? `<a href="#fund-${x.fund.code}" class="plain">${esc(x.fund.short || x.name)}</a>` : esc(x.name)}${codeChip(x.code)}${x.notHeld ? '<span class="tag">未持有</span>' : ''}${x.fund && x.fund.pick ? '<span class="tag pick">推荐</span>' : ''}</div>
         <div class="r">${actChip(x.adv)}</div>
         <div class="s why">${x.adv.why.map(w => `<span>${esc(w)}</span>`).join('')}</div>
         <div class="s n">${heldLine(A, x)}</div>
@@ -850,20 +852,31 @@ function viewAnalysis(A) {
     <div class="card-h"><h3>本月多出来的钱怎么买</h3><span class="sub">共 ${fmt(A.freed - (A.deploy - A.deployUsed))}</span></div>
     <p class="note">${[A.sellAmt >= 1 ? `卖出 ${fmt(A.sellAmt)}` : '', A.capPool >= 1 ? `限购买不进的定投钱 ${fmt(A.capPool)}` : '', A.deployUsed >= 1 ? `银行卡里投回 ${fmt(A.deployUsed)}` : ''].filter(Boolean).join(' + ')}。${A.deploy - A.deployUsed >= 1 ? `银行卡里另有 ${fmt(A.deploy - A.deployUsed)} 这个月没地方投，继续留着。` : ''}</p>
     <div class="tbox"><table><thead><tr><th>买入</th><th>原因</th><th class="r">金额</th></tr></thead><tbody>
-      ${A.reinvest.filter(r => r.amt >= 1).map(r => `<tr><td><span class="cellname">${dot(r.cat)}<a href="#fund-${r.fund.code}" class="plain">${esc(r.fund.short || r.fund.name)}</a></span>${capLine(A, r.fund, 'reinvest')}</td><td class="muted">${esc(r.why || '')}</td><td class="r strong">${fmt(r.amt)}</td></tr>`).join('')}
+      ${A.reinvest.filter(r => r.amt >= 1).map(r => `<tr><td><span class="cellname">${dot(r.cat)}<a href="#fund-${r.fund.code}" class="plain">${esc(r.fund.short || r.fund.name)}</a>${codeChip(r.fund.code)}</span>${capLine(A, r.fund, 'reinvest')}</td><td class="muted">${esc(r.why || '')}</td><td class="r strong">${fmt(r.amt)}</td></tr>`).join('')}
       ${A.sellLeft + A.capLeft >= 1 ? `<tr><td><span class="cellname"><span>先不买，留在银行卡</span></span></td><td class="muted">${A.capHit.length ? `${esc(A.capHit.join('、'))}本月额度已用完；` : ''}其他类别不缺，或者估值太贵，等能买的时候再用</td><td class="r strong">${fmt(A.sellLeft + A.capLeft)}</td></tr>` : ''}
       <tr><td colspan="2"><b>合计</b></td><td class="r strong">${fmt(A.freed - (A.deploy - A.deployUsed))}</td></tr></tbody></table></div>
     <p class="note">按各类比目标少多少来分，缺得多的多买；估值“很贵”的类别不买，限购的买满额度为止。这笔钱和每月定投分开算。${A.swaps.length ? '换基的钱直接买同类推荐基金，不在这张表里。' : ''}</p>
   </section>` : ''}
-  <div class="grid2">
   <section class="card" id="sec-plan">
     <div class="card-h"><h3>本月定投计划</h3><span class="sub">每月基础 ${fmt(A.monthly)}</span></div>
     ${lockNote(A)}
     <div class="tbox"><table><thead><tr><th>基金</th><th>估值信号</th><th class="r">倍数</th><th class="r">金额</th></tr></thead><tbody>
-      ${A.plan.map(p => `<tr><td><span class="cellname">${dot(p.cat)}<a href="#fund-${p.fund.code}" class="plain">${esc(p.fund.short || p.fund.name)}</a>${p.note ? `<span class="tag">${esc(p.note)}</span>` : ''}</span>${capLine(A, p.fund, 'plan')}</td><td>${p.note === '已超配' ? '<span class="act hold">不买</span>' : sigChip(p.sig)}</td><td class="r">${p.cat === 'cash' ? (A.extra > 0 ? `取出 ${fmt(A.extra)}` : '净额') : p.note === '限购' ? '买满' : p.note === '暂停申购' ? '暂停' : p.m + '×'}</td><td class="r strong">${fmt(p.amt)}</td></tr>`).join('')}
+      ${A.plan.map(p => `<tr><td><span class="cellname">${dot(p.cat)}<a href="#fund-${p.fund.code}" class="plain">${esc(p.fund.short || p.fund.name)}</a>${codeChip(p.fund.code)}${p.note ? `<span class="tag">${esc(p.note)}</span>` : ''}</span>${capLine(A, p.fund, 'plan')}</td><td>${p.note === '已超配' ? '<span class="act hold">不买</span>' : sigChip(p.sig)}</td><td class="r">${p.cat === 'cash' ? (A.extra > 0 ? `取出 ${fmt(A.extra)}` : '净额') : p.note === '限购' ? '买满' : p.note === '暂停申购' ? '暂停' : p.m + '×'}</td><td class="r strong">${fmt(p.amt)}</td></tr>`).join('')}
       <tr><td colspan="3"><b>合计</b></td><td class="r strong">${fmt(A.planTotal)}</td></tr></tbody></table></div>
     ${P.ledger && !P.example ? `<div class="btnrow"><button class="btn ghost" type="button" data-ledger="plan">在支付宝买完了，按计划一键记账</button></div>` : ''}
     ${planNote(A)}<p class="note">规则：便宜的类别多买，贵的少买（很贵也买一半，不完全停），限购或暂停申购的买不进，已经超配的本月不买；某类比目标少 ${C.rules.catchUpBand} 个点以上且不贵时，额外多买 0.5 倍。</p>
+  </section>
+  ${stressCard(A)}
+  <details class="more-sec" id="ana-more"><summary>更多：AI 解读、市场估值、逐年涨跌、同类对比</summary><div class="more-in">
+  <section class="card" id="sec-ai">
+    <div class="card-h"><h3>AI 解读</h3><span class="sub">DeepSeek · 只解释，不改规则</span></div>
+    ${AIS.key ? `<div class="btnrow"><button class="btn" type="button" data-ai="review">${P.aiReport ? '重新解读本月建议' : '让 AI 解读本月建议'}</button><button class="btn ghost" type="button" data-ai="stop" id="ai-stop" hidden>停止</button></div>
+    <div id="ai-out" class="ai-text" ${P.aiReport ? '' : 'hidden'}>${P.aiReport ? aiReportHTML(P.aiReport) : ''}</div>
+    <div class="addrow"><label class="field">有问题直接问（比如：为什么让我卖富国天惠？）<input id="ai-q" type="text" class="txt" maxlength="200" placeholder="输入问题，按回车"></label><button class="btn ghost" type="button" data-ai="ask">提问</button></div>
+    <div id="ai-ans" class="ai-text" hidden></div>
+    <p class="note">提问时会把你的持仓金额和本页的建议发给 DeepSeek，不发名字。</p>`
+    : '<p class="muted" style="font-size:13px">填上 DeepSeek API key，就能让 AI 用大白话解读本月建议，也能直接提问。</p><a class="btn sm" href="#me-ai">去设置</a>'}
+    <details class="pickfrom"><summary>盯盘历史提醒（${marketAlerts(3650).length} 条）</summary>${marketAlerts(3650).slice(0, 20).map(alertHTML).join('') || '<p class="note">还没有提醒。只有估值档位变化、明显回撤或数据断更时才会提醒。</p>'}</details>
   </section>
   <section class="card" id="sec-market">
     <div class="card-h"><h3>市场估值</h3><span class="sub">决定每月买多少</span></div>
@@ -884,16 +897,16 @@ function viewAnalysis(A) {
     </div>
     <p class="note">海外按标普500、纳指100 各自的估值分位决定买多少，规则和 A 股一样。QDII 基金常有限购，买不满的部分留在银行卡。</p>
   </section>
-  </div>
   ${(M.hs300Hist && M.hs300Hist.length) || (M.divLowVolHist && M.divLowVolHist.length) ? `<div class="grid2">
     <section class="card"><div class="card-h"><h3>沪深300 逐年涨跌</h3><span class="sub">${M.hs300HistSrc === '联接基金净值' ? '按联接基金净值' : '指数'}，红涨绿跌</span></div>${yearBars(M.hs300Hist)}</section>
     <section class="card"><div class="card-h"><h3>红利低波 逐年涨跌</h3><span class="sub">${M.divLowVolHistSrc === '联接基金净值' ? '按联接基金净值' : '指数'}，红涨绿跌</span></div>${yearBars(M.divLowVolHist)}</section></div>` : ''}
-  ${stressCard(A)}
   <section class="card" id="sec-compare">
     <div class="card-h"><h3>同类对比：哪只更好</h3><span class="sub">评分不看近1年涨幅</span></div>
     <div class="seg" role="group" aria-label="选择类别">${C.cats.filter(c => C.levels.some(l => l.target[c.k] > 0)).map(c => `<button class="segbtn" type="button" data-cmp="${c.k}" aria-pressed="${cmpCat === c.k}">${c.n}</button>`).join('')}</div>
     <div id="cmp">${compareTable(cmpCat)}</div>
   </section>
+  </div>  </details>
+  ${riskFoot()}
   </div>`;
 }
 let cmpCat = 'index';
@@ -916,11 +929,11 @@ function viewFunds() {
   <section class="card"><div class="rows">${list.map(f => `
     <a class="row" href="#fund-${f.code}">
       <div class="t">${dot(f.cat)}<span class="ell">${esc(f.short || f.name)}</span>${f.pick ? '<span class="tag pick">推荐</span>' : ''}</div>
-      <div class="r"><div class="v n ${cls(f.cat === 'cash' ? null : f.ret3y)}">${f.cat === 'cash' ? (f.yield7d != null ? f.yield7d.toFixed(2) + '%' : '—') : pct(f.ret3y)}</div></div>
-      <div class="s n">${f.code} · ${CAT[f.cat].n} · 评分 ${f.score}（同类第 ${f.rank}/${f.peers}）</div>
-      <div class="s rt">${f.cat === 'cash' ? '七日年化' : '近3年'}</div>
+      <div class="r"><div class="v n">${f.score} 分</div></div>
+      <div class="s n">${f.code} · ${CAT[f.cat].n} · 同类第 ${f.rank}/${f.peers}${totalFee(f) != null ? ` · 年费率 ${totalFee(f)}%` : ''}</div>
+      <div class="s rt">评分</div>
     </a>`).join('')}</div></section>
-  <p class="note">数据截至 ${esc(DATA.updated)}。点进基金可以看当天盘中的实时估值。</p>
+  <p class="note">评分只看费率、规模、长期收益和回撤，不看最近涨了多少。过去涨得多，不代表以后还会涨，也不是多买的理由。数据截至 ${esc(DATA.updated)}，点进基金可以看收益、回撤和盘中实时估值。</p>
   </div>`;
 }
 
@@ -949,6 +962,7 @@ function viewFund(code, A) {
       <div class="stat"><span class="k">规模</span><span class="v n">${f.scaleYi == null ? '—' : f.scaleYi.toFixed(1) + ' 亿'}</span></div>
       <div class="stat"><span class="k">年费率合计</span><span class="v n">${totalFee(f) == null ? '—' : totalFee(f).toFixed(2) + '%'}</span></div>
     </div>
+    ${c.eq ? `<p class="note">近 3 年的收益只代表过去这一段${f.cat === 'overseas' ? '（美股这几年涨得特别多）' : ''}，不代表以后。涨得多不是多买的理由：${CAT[f.cat].n}在组合里的比例是固定的（现在目标 ${A.T[f.cat]}%）。历史上的大熊市里，这一类跌过约 ${c.dd}%。</p>` : ''}
     <div class="btnrow">
       <a class="btn" href="https://fund.eastmoney.com/${f.code}.html" target="_blank" rel="noopener">在天天基金查看 ↗</a>
       <button class="btn ghost" type="button" data-copy="${f.code}">复制代码，去支付宝搜</button>
@@ -967,7 +981,7 @@ function viewFund(code, A) {
       ${hold ? `<div class="why">${hold.adv.why.map(w => `<span>${esc(w)}</span>`).join('')}</div>${hold.adv.amt ? `<div class="bigamt">${amtLine(hold.adv)}</div>` : ''}`
         : `<p>你没有持有它，它也不在推荐组合里。${sig.top ? '现在估值很贵，不建议买。' : '要买同类的话，优先买推荐的那只。'}</p>`}
       ${f.cat === 'index' || f.cat === 'active' ? (() => { const own = f.cat === 'index' && f.val && SIGV[f.val] && M[f.val] ? M[f.val].pePct10y : idxPct; return `<div class="temp"><span>${esc(valText(f.cat, f))}</span>${sigChip(sig)}</div>${gaugeHTML(own)}`; })() : f.cat === 'div' ? `<div class="temp"><span>息差 ${spread == null ? '—' : spread.toFixed(2) + ' 个点'}</span>${sigChip(sig)}</div>` : f.cat === 'overseas' ? `<div class="temp"><span>${valText('overseas', f)}</span>${sigChip(sig)}</div>${gaugeHTML(M[f.val] && M[f.val].pePct10y)}` : ''}
-      ${f.buyCap >= BIG_CAP ? `<p class="note">每天最多买 ${fmt(f.buyCap)}，正常定投不受影响。</p>` : tightCap(f) ? `<p class="note">限购：每天最多买 ${fmt(f.buyCap)}（天天基金，${esc(f.feeDate || '')} 查到），一个月大约最多 ${fmt(monthCap(f))}，买不进去的钱先留着，下个月接着买。${(A.capTotal[f.code] || 0) >= 1 ? `本月在支付宝<b>设“每日定投” ${fmt(dailyAmt(f, A.capTotal[f.code]))}</b> 就行。` : ''}</p>${DAILY_HOWTO}` : f.buyStatus === '暂停申购' ? '<p class="note">这只现在暂停申购，买不了。等基金公司恢复，每天的数据更新会自动发现。</p>' : ''}
+      ${f.buyCap >= BIG_CAP ? `<p class="note">每天最多买 ${fmt(f.buyCap)}，正常定投不受影响。</p>` : tightCap(f) ? `<p class="note">限购：每天最多买 ${fmt(f.buyCap)}（天天基金，${esc(f.feeDate || '')} 查到），一个月大约最多 ${fmt(monthCap(f))}，买不进去的钱这个月转去买其他缺的类别。支付宝里的额度可能和这里不一样，以支付宝显示为准。${(A.capTotal[f.code] || 0) >= 1 ? `本月：<b>${A.capTotal[f.code] <= f.buyCap ? `一次买 ${fmt(A.capTotal[f.code])} 就行` : buyHow(f, A.capTotal[f.code])}</b>。` : ''}</p>${DAILY_HOWTO}` : f.buyStatus === '暂停申购' ? '<p class="note">这只现在暂停申购，买不了。等基金公司恢复，每天的数据更新会自动发现。</p>' : ''}
     </section>
   </div>
   <div class="grid2">
@@ -1175,6 +1189,7 @@ function viewMe() {
       <ol class="answers">${C.quiz.map((q, qi) => `<li><span class="muted">${esc(q.q)}</span><b>${esc(q.a[ans[qi]] || '—')}</b></li>`).join('')}</ol></details>
     <div class="btnrow"><button class="btn ghost" type="button" data-me="quiz">重新测评</button><span class="note">收入、用钱计划变了再重做。重做会改变系统给你的比例。</span></div>`
     : `<form id="quiz" class="quiz">${C.quiz.map((q, qi) => `<fieldset><legend>${qi + 1}. ${esc(q.q)}</legend><div class="opts">${q.a.map((a, ai) => `<label class="opt"><input type="radio" name="q${qi}" id="q${qi}-${ai}" value="${ai}" ${ans[qi] === ai ? 'checked' : ''}><span>${esc(a)}</span></label>`).join('')}</div></fieldset>`).join('')}
+      <div id="quiz-warn" class="banner warn quizwarn" hidden></div>
       <div class="btnrow"><button class="btn" type="submit">保存测评</button>${P.risk ? '<button class="btn ghost" type="button" data-me="cancel">取消</button>' : ''}<span class="note" id="quiz-msg"></span></div></form>`}
   </section>
   <div class="view">
@@ -1207,6 +1222,14 @@ function viewMe() {
   </section>
   </div>
 
+  <section class="card">
+    <div class="card-h"><h3>备份与换设备</h3><span class="sub">数据只存在这台设备的浏览器里</span></div>
+    ${backupWarn(true)}
+    <p class="note">换手机、换 iPad，或者清理浏览器之前，先导出一份。到新设备上导入，就能接着用。导出内容包括所有用户。</p>
+    <div class="btnrow"><button class="btn" type="button" data-export>导出备份</button><button class="btn ghost" type="button" data-import>导入备份</button><input type="file" id="import-file" accept=".json,application/json" hidden></div>
+    <textarea id="backup-text" class="backup" hidden readonly aria-label="备份内容"></textarea>
+  </section>
+  <details class="more-sec" id="me-more"><summary>高级设置：AI 助手（DeepSeek）</summary><div class="more-in">
   <section class="card" id="me-ai">
     <div class="card-h"><h3>AI 助手（DeepSeek）</h3>${AIS.key ? '<span class="tag pick">已设置</span>' : '<span class="tag">未设置</span>'}</div>
     <p class="note">到 platform.deepseek.com 注册 → API keys → 创建，把 key 粘贴到下面。key 只保存在这台设备的浏览器里，不会进备份文件，也不会上传到 GitHub。建议在 DeepSeek 后台设置用量上限。<b>不要把 key 发给任何人。</b></p>
@@ -1219,15 +1242,37 @@ function viewMe() {
     <div class="btnrow"><button class="btn" type="button" data-ai="savekey">保存</button>${AIS.key ? '<button class="btn ghost" type="button" data-ai="testkey">测试连接</button><button class="btn ghost" type="button" data-ai="delkey">删除 key</button>' : ''}</div>
     <div id="ai-test" class="note" hidden></div>
   </section>
-  <section class="card">
-    <div class="card-h"><h3>备份与换设备</h3><span class="sub">数据只存在这台设备的浏览器里</span></div>
-    <p class="note">换手机、换 iPad，或者清理浏览器之前，先导出一份。到新设备上导入，就能接着用。导出内容包括所有用户。</p>
-    <div class="btnrow"><button class="btn" type="button" data-export>导出备份</button><button class="btn ghost" type="button" data-import>导入备份</button><input type="file" id="import-file" accept=".json,application/json" hidden></div>
-    <textarea id="backup-text" class="backup" hidden readonly aria-label="备份内容"></textarea>
-  </section>
+  </div></details>
   </div>`;
 }
-let delArm = false, resetArm = false;
+let delArm = false, resetArm = false, homeMore = false, quizWarn = '';
+/* 防丢数据：数据只在这台设备的浏览器里。iPhone 的 Safari 标签页一周不打开可能被清掉；隔一个月提醒导出一次备份 */
+const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 存不了就算了 */ } };
+const iosTab = () => { const ua = navigator.userAgent || ''; const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  let sa = false; try { sa = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches; } catch (e) { sa = false; } return ios && !sa; };
+const daysSince = d => /^\d{4}-\d{2}-\d{2}$/.test(d) ? Math.floor((Date.parse(today()) - Date.parse(d)) / 86400000) : Infinity;
+/* 风险说明：第一次用时完整说一遍，点“我知道了”以后只在页面底部留一行 */
+function riskNotice(A) {
+  const T = A.T, eq = Math.round(C.cats.filter(c => c.eq).reduce((a, c) => a + T[c.k], 0)), bear = Math.round(C.cats.reduce((a, c) => a + T[c.k] / 100 * c.dd, 0));
+  if (lsGet('money.riskAck')) return '';
+  return `<section class="card risk-card"><div class="card-h"><h3>先说清楚</h3></div>
+    <ul class="calm-list"><li>这不是理财产品，<b>不保本，也不保证收益</b>。</li>
+    <li>你的组合里股票基金大约占 ${eq}%。大约每 3–4 年会有一年是亏的；遇到 2008 年那样的大熊市，可能浮亏约 ${bear}%，要一两年甚至更久才回来。</li>
+    <li>5%–10% 是拿 5 年以上的<b>平均</b>，不是每年都稳定这么多。</li>
+    <li>这里的建议是固定规则算出来的参考，<b>不构成投资建议</b>，买不买、卖不卖由你自己决定。</li></ul>
+    <div class="btnrow"><button class="btn" type="button" data-riskack>我知道了</button></div></section>`;
+}
+const riskFoot = () => '<p class="note riskfoot">不保本 · 长期平均不是每年稳定 · 规则算出来的参考，不构成投资建议</p>';
+function backupWarn(inMe) {
+  const last = lsGet('money.exp'), age = daysSince(last), stale = age > 30;
+  if (!inMe && (P.example || !P.items.length || !(stale || iosTab()) || daysSince(lsGet('money.expSnooze')) < 7)) return '';
+  const parts = [];
+  if (iosTab()) parts.push('你是在 Safari 里打开的：一周不打开本网站，iPhone 可能会自动清掉这里的数据。点“分享 → 添加到主屏幕”，以后从主屏幕打开更安全。');
+  parts.push(last ? `上次导出备份是 ${cnDate(last) || last}${stale ? `，已经 ${age} 天了，建议再导出一份` : ''}。` : '还没导出过备份。数据只在这台设备上，清理浏览器、换手机就没了。');
+  if (inMe) return `<p class="note${stale || iosTab() ? ' warnline' : ''}">${parts.join('')}</p>`;
+  return `<div class="banner warn"><span>${parts.join('')}</span><div class="btnrow"><button class="btn sm" type="button" data-export>导出备份（30 秒）</button><button class="btn sm ghost" type="button" data-snooze>以后再说</button></div></div>`;
+}
 const TREND_NOTE = () => { const tr = C.rules.trend; return `打开后，某类基金涨得多、占比超过目标时，系统会多等一等再卖（最多等到超出 ${tr.widen} 个点），很贵的时候也先不卖一部分，等涨势停了（价格跌回长期平均线以下）再按平常规则卖。贵到近 10 年最贵的 ${100 - tr.hardPct}% 那段时，照常卖。<br>好处：不会太早卖掉还在涨的。代价有两个：一是跌回来时，可能把赚到的一部分还回去；二是这段时间股票占比会比测评定的高，遇到大跌时亏得也更多。它不会让你多买任何东西。拿不准就别开。`; };
 function prefRows() {
   const pr = P.prefs, short = currentLevel().short;
@@ -1255,7 +1300,7 @@ function prefsForm() {
 }
 function meAction(act) {
   if (act === 'name' || act === 'quiz' || act === 'prefs') { dropDraft('pname', 'q', 'pref-'); meEdit = act; render(true); if (act === 'name') $('#pname')?.select(); else document.getElementById(act === 'quiz' ? 'me-quiz' : 'prefs-form')?.scrollIntoView({ block: 'start' }); }
-  else if (act === 'cancel') { meEdit = null; dropDraft('pname', 'q', 'pref-'); render(true); }
+  else if (act === 'cancel') { meEdit = null; quizWarn = ''; dropDraft('pname', 'q', 'pref-'); render(true); }
   else if (act === 'savename') { P.name = ($('#pname').value || '').trim().slice(0, 12) || '我'; meEdit = null; dropDraft('pname'); save(); render(true); toast(storageOk ? '已保存' : '浏览器禁止了本地存储，刷新后会丢失'); }
 }
 function savePrefs() {
@@ -1286,6 +1331,13 @@ const STRESS = [
   { n: '熊市', d: '十年一两次的大熊市，按各类历史上的大跌幅度', f: Object.fromEntries(C.cats.map(c => [c.k, c.dd])) }
 ];
 function curvePoints(f) { return (f && Array.isArray(f.curve) ? f.curve : []).filter(p => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p[0]) && !isNaN(Date.parse(p[0])) && Number.isFinite(p[1]) && p[1] > 0); }
+/* 更长的历史（常识，不来自本站数据）：大跌时给人一点底气，但不承诺多久回本 */
+const LONG_HIST = {
+  index: '沪深300 在 2008 年跌过约 70%，2015 年约 45%，2021–2024 年约 45%，每次之后都涨回来过，但有的要等好几年。下跌时坚持定投，买到的份额更便宜。',
+  div: '红利类股票在 2008 年那样的大熊市里也跌过 40% 以上，之后靠分红和反弹慢慢回来。下跌时坚持定投，买到的份额更便宜。',
+  overseas: '标普500 在 2008 年跌过约 55%，2022 年约 25%；纳指100 在 2000 年前后跌过约 80%，2022 年约 35%，之后都涨回来过，但 2000 年那次用了十几年。所以海外只占组合的一部分。',
+  bond: '债券基金平时很少跌这么多，如果跌了要看看是不是持有的债券出了问题。'
+};
 /* 当前距近一年最高点的回撤 */
 function currentDrawdown(f) {
   const c = curvePoints(f); if (c.length < 10) return null;
@@ -1334,7 +1386,7 @@ function calmFund(x, A) {
   const c = curvePoints(f), years = c.length ? Math.max(1, Math.round((Date.parse(c[c.length - 1][0]) - Date.parse(c[0][0])) / (365.25 * 86400000))) : 0;
   const eps = drawdownEpisodes(f, line), done = eps.filter(e => e.recover), ongoing = eps.find(e => !e.recover);
   let hist;
-  if (!done.length) hist = `过去 ${years} 年的数据里，${name}还没有过跌超 ${line}% 又涨回来的完整记录，所以没法用它自己的历史说话。`;
+  if (!done.length) hist = `过去 ${years} 年的数据里，${name}还没有过跌超 ${line}% 又涨回来的完整记录。看更长的历史：${LONG_HIST[f.cat] || '大跌在长期投资里很常见，坚持定投的人最后多数都回来了。'}`;
   else {
     const ms = done.map(e => monthsBetweenDates(e.peak, e.recover));
     hist = done.length === 1 ? `过去 ${years} 年里，${name}有 1 次跌超 ${line}%（最深 ${Math.abs(done[0].deepest).toFixed(0)}%），从开始下跌到回到高点用了约 ${ms[0]} 个月。`
@@ -1370,10 +1422,10 @@ function calmCard(A, compact) {
   const firstHeld = heldAl[0];
   return `<section class="card calm-card" id="sec-calm">
     <div class="card-h"><h3>下跌时的冷静助手</h3><span class="sub">用真实净值算</span></div>
-    ${al.map(x => { const cf = calmFund(x, A); return `<div class="calm-fund">
+    ${(() => { const seen = new Set(); return al.map(x => { const cf = calmFund(x, A), todo = cf.todo.filter(t => !seen.has(t)); todo.forEach(t => seen.add(t)); const hist = seen.has(cf.hist) ? '' : cf.hist; seen.add(cf.hist); return `<div class="calm-fund">
       <a class="row" href="#fund-${x.f.code}"><div class="t">${dot(x.f.cat)}<span class="ell">${esc(x.f.short || x.f.name)}</span>${x.held ? '' : '<span class="tag">未持有</span>'}</div><div class="r n down strong">−${Math.abs(x.cur.dd).toFixed(1)}%</div><div class="s">从近一年最高点算，截至 ${fullDate(x.cur.date)}（提醒线 ${DD_LINE[x.f.cat]}%）</div></a>
-      <p class="note">${cf.hist}</p>
-      <ul class="calm-list">${cf.todo.map(t => `<li>${t}</li>`).join('')}</ul></div>`; }).join('')}
+      ${hist ? `<p class="note">${hist}</p>` : ''}
+      ${todo.length ? `<ul class="calm-list">${todo.map(t => `<li>${t}</li>`).join('')}</ul>` : '<p class="note">该怎么做同上。</p>'}</div>`; }).join(''); })()}
     <p class="note">${al.some(x => calmFund(x, A).ruleSells) ? '按规则分批卖这一部分没问题；要避免的是因为害怕把剩下的也一次卖光。' : '真正决定结果的，是你能不能在下跌时继续按计划执行、不在低点卖出。'}</p>
     ${firstHeld ? `<button class="btn ghost" type="button" data-calm="want" data-code="${firstHeld.f.code}">我很想卖掉</button><div id="calm-check" hidden></div>` : ''}
   </section>`;
@@ -1739,9 +1791,11 @@ function renderInner(force) {
   if (same) window.scrollTo(0, y);
   else {
     const anchor = { 'analysis-calm': 'sec-calm', 'analysis-stress': 'sec-stress', 'me-cal': 'me-cal', 'analysis-plan': 'sec-plan', 'analysis-market': 'sec-market', 'analysis-ai': 'sec-ai', 'me-quiz': 'me-quiz', 'me-ai': 'me-ai', 'holdings-ledger': 'sec-ledger' }[h];
-    if (anchor) document.getElementById(anchor)?.scrollIntoView(); else window.scrollTo(0, 0);
+    const el = anchor && document.getElementById(anchor);
+    if (el) { let d = el.closest('details'); while (d) { d.open = true; d = d.parentElement && d.parentElement.closest('details'); } el.scrollIntoView(); } else window.scrollTo(0, 0);
   }
   if (h.startsWith('fund-')) loadLive(h.slice(5));
+  const hm = $('#home-more'); if (hm) hm.addEventListener('toggle', () => { homeMore = hm.open; });
   if (tab === 'holdings') bindHoldings();
   if (tab === 'analysis' && $('#ai-q')) $('#ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); aiAction('ask'); } });
   if (tab === 'me') bindMe();
@@ -1750,12 +1804,12 @@ window.addEventListener('hashchange', () => { delArm = false; holdDel = null; de
 
 /* ================= 交互 ================= */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-cmp],[data-ff],[data-copy],[data-back],[data-hold],[data-me],[data-relock],[data-ask],[data-clear],#add-btn,[data-checkin],[data-uncheck],[data-user],[data-adduser],[data-delask],[data-delcancel],[data-deluser],[data-export],[data-import],[data-reset],[data-ai],[data-ledger],[data-cal],[data-calm]');
+  const t = e.target.closest('[data-cmp],[data-ff],[data-copy],[data-back],[data-hold],[data-me],[data-relock],[data-ask],[data-clear],#add-btn,[data-checkin],[data-uncheck],[data-user],[data-adduser],[data-delask],[data-delcancel],[data-deluser],[data-export],[data-snooze],[data-riskack],[data-import],[data-reset],[data-ai],[data-ledger],[data-cal],[data-calm]');
   if (!t) return;
   const d = t.dataset;
   if (d.cmp) { cmpCat = d.cmp; document.querySelectorAll('[data-cmp]').forEach(b => b.setAttribute('aria-pressed', b === t)); $('#cmp').innerHTML = compareTable(cmpCat); }
   else if (d.ff) { fundFilter = d.ff; render(true); }
-  else if (d.copy) copyText(d.copy, '已复制 ' + d.copy + '，去支付宝搜索框粘贴');
+  else if (d.copy) { e.preventDefault(); copyText(d.copy, '已复制 ' + d.copy + '，去支付宝搜索框粘贴'); }
   else if ('back' in d) { if (history.length > 1) history.back(); else location.hash = '#funds'; }
   else if (d.ask) { if (!P.monthPlan) return; if (d.ask === 'keep') { P.monthPlan.ask = false; save(); render(true); toast('好的，本月计划不变'); } else { P.monthPlan = null; save(); render(true); toast('已按最新持仓重算本月计划'); } }
   else if ('relock' in d) { if (monthDone()) { toast('这个月已经打卡或记过账了，计划不再变'); return; } P.monthPlan = null; save(); render(true); toast('已按最新数据重算本月计划'); }
@@ -1792,6 +1846,8 @@ document.addEventListener('click', e => {
   else if ('cal' in d) downloadCalendar();
   else if (d.calm === 'want') { const box = $('#calm-check'); box.hidden = !box.hidden; if (!box.hidden) box.innerHTML = calmChecklist(analyze(), d.code); }
   else if ('export' in d) exportBackup();
+  else if ('riskack' in d) { lsSet('money.riskAck', today()); render(true); }
+  else if ('snooze' in d) { lsSet('money.expSnooze', today()); render(true); }
   else if ('reset' in d) { if (!resetArm) { resetArm = true; t.textContent = '再点一次，确认清空'; return; } STORE = { current: 'p1', profiles: { p1: newProfile('我') } }; P = STORE.profiles.p1; resetArm = false; holdEdit = holdDel = meEdit = null; resEdit = false; holdOpen = prefsOpen = false; savedMsg = {}; DRAFT = {}; found = null; save(); render(true); toast('已重置'); }
   else if ('import' in d) $('#import-file').click();
 });
@@ -1841,6 +1897,17 @@ function bindMe() {
     const ans = C.quiz.map((_, i) => { const c = document.querySelector(`input[name="q${i}"]:checked`); return c ? +c.value : null; });
     const r = quizLevel(ans);
     if (!r) { $('#quiz-msg').textContent = '还有题没选。'; return; }
+    // 降档（尤其是改成“1 年内要用”）会让系统分批卖出股票基金。大跌时最容易冲动这么改，所以多问一次
+    const old = P.risk, key = ans.join('');
+    if (old && levelIndex(r.k) < levelIndex(old.k) && quizWarn !== key) {
+      quizWarn = key; const falling = calmAlerts(analyze()).some(x => x.held);
+      const box = $('#quiz-warn'); box.hidden = false;
+      box.innerHTML = `<p><b>${r.k === 'short' ? '改成“1 年内要用”，系统会让你在 3 个月内把股票基金都卖掉，换成债券。' : `这样会从“${C.levels[levelIndex(old.k)].n}”降到“${C.levels[levelIndex(r.k)].n}”，系统会分批卖出一部分股票基金。`}</b></p>
+        <p>${falling ? '你的基金最近正在下跌。' : ''}你是真的${r.k === 'short' ? '一年内要用这笔钱' : '收入、用钱计划变了'}，还是因为${falling ? '最近在跌，' : ''}心里害怕？如果只是害怕，请保持原来的答案：跌的时候卖，最容易把浮亏变成真亏。</p>
+        <div class="btnrow"><button class="btn danger" type="submit">确实变了，确认修改</button><button class="btn ghost" type="button" data-me="cancel">保持原来的答案</button></div>`;
+      box.scrollIntoView({ block: 'nearest' }); return;
+    }
+    quizWarn = '';
     P.risk = { ans, score: r.score, k: r.k, at: new Date().toISOString() }; meEdit = null; dropDraft('q'); unlockMonth(); save(); stamp('quiz'); render(true);
     toast(`测评完成：${C.levels[levelIndex(r.k)].n}型`);
   });
@@ -1863,7 +1930,7 @@ function exportBackup() {
   const txt = JSON.stringify(Object.assign({ app: 'money', exportedAt: new Date().toISOString() }, STORE), null, 1);
   try {
     const blob = new Blob([txt], { type: 'application/json' }), a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = `money-backup-${today()}.json`; document.body.appendChild(a); a.click(); a.remove();
+    a.href = URL.createObjectURL(blob); a.download = `money-backup-${today()}.json`; document.body.appendChild(a); a.click(); a.remove(); lsSet('money.exp', today()); setTimeout(() => render(true), 300);
     setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('已导出。iPhone 上会存到“文件”App');
   } catch (e) { const ta = $('#backup-text'); ta.hidden = false; ta.value = txt; ta.select(); toast('下载不了，内容已显示在下面，可以全选复制'); }
 }
@@ -1904,6 +1971,7 @@ async function boot() {
   FUND = Object.fromEntries(FUNDS.map(f => [f.code, f]));
   CAT = Object.fromEntries(C.cats.map(c => [c.k, c]));
   try { const r2 = await fetch('data/ai-report.json?v=' + Math.floor(Date.now() / 600000), { cache: 'no-cache' }); if (r2.ok) { const j = await r2.json(); if (j && typeof j === 'object' && (Array.isArray(j.history) || typeof j.checked === 'string')) MARKET_AI = { checked: typeof j.checked === 'string' ? j.checked : '', history: Array.isArray(j.history) ? j.history : [] }; } } catch (e) { /* 还没有市场点评 */ }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 不支持就算了 */ }
   computeSignals(); scoreAll();
   $('#datestamp').textContent = '数据更新：' + (DATA.updated || '—');
   $('#sidefoot').textContent = `数据更新：${DATA.updated || '—'}。净值、估值每个交易日自动更新，基金详情页显示盘中实时估值。`;

@@ -352,3 +352,15 @@ td .cellname .tag{flex:none}
 .donebox{background:var(--fill);border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.6}
 .linkbtn{border:0;background:none;padding:0;color:var(--brand);font:inherit;cursor:pointer;text-decoration:underline}
 @media (max-width:899px){.linkbtn{min-height:32px}}
+/* 精简：不常看的内容收进“更多” */
+.more-sec>summary{cursor:pointer;list-style:none;color:var(--brand);font-size:15px;min-height:44px;display:flex;align-items:center;justify-content:center;background:var(--card);border-radius:12px;box-shadow:var(--shadow)}
+.more-sec>summary::-webkit-details-marker{display:none}
+.more-sec>summary::after{content:" ›";margin-left:4px;transition:transform .15s}
+.more-sec[open]>summary::after{transform:rotate(90deg)}
+.more-in{display:grid;gap:16px;margin-top:16px}
+.warnline{color:var(--warn)}
+.riskfoot{text-align:center;margin-top:4px}.risk-card{border:1px solid var(--warn-soft)}
+.quizwarn{display:grid;gap:6px}.quizwarn[hidden]{display:none}.quizwarn p{margin:0}
+.codechip{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);font-weight:400}
+.copybtn{border:0;background:var(--fill);color:var(--brand);border-radius:6px;padding:2px 7px;font:inherit;font-size:12px;cursor:pointer}
+@media (max-width:899px){.copybtn{min-height:30px;padding:4px 9px}}
