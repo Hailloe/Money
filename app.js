@@ -735,7 +735,7 @@ function capLine(A, f, where) {
   if (!f || !tightCap(f)) return '';
   const tot = A.capTotal[f.code] || 0; if (tot < 1) return '';
   const inRe = A.reinvest.some(r => r.fund.code === f.code && r.amt >= 1), planAmt = ((A.plan.find(p => p.fund.code === f.code) || {}).amt) || 0;
-  if (where === 'plan' && inRe) return `<div class="sub">限购，每日定投金额见下面“本月多出来的钱怎么买”</div>`;
+  if (where === 'plan' && inRe) return `<div class="sub">限购，怎么买见下面“本月多出来的钱怎么买”</div>`;
   if (tot <= f.buyCap) return `<div class="sub">每天最多买 ${fmt(f.buyCap)}，一次买完就行</div>`;
   return `<div class="sub">${where === 'reinvest' && planAmt >= 1 ? `本月合计要买 ${fmt(tot)}（已含定投计划的 ${fmt(planAmt)}）。` : ''}${buyHow(f, tot)}</div>`;
 }
@@ -1272,9 +1272,8 @@ function riskNotice(A) {
     '这里的建议是固定规则算出来的参考，<b>不构成投资建议</b>，买不买、卖不卖由你自己决定。'
   ] : [
     '这不是理财产品，<b>不保本，也不保证收益</b>。',
-    `你的组合里股票基金大约占 ${eq}%，长期估算年化约 ${A.expRet.toFixed(1)}%（只是估算）。有的年份会亏，股票越多越常见，大约每 3–4 年会遇到一次。`,
+    `你的组合里股票基金大约占 ${eq}%，拿 5 年以上的长期<b>平均</b>估算年化约 ${A.expRet.toFixed(1)}%，不是每年都稳定这么多。有的年份会亏，大约每 3–4 年会遇到一次。`,
     `按目标比例算，遇到 2008 年那样的大熊市，可能浮亏约 ${bear}%，要一两年甚至更久才回来。`,
-    '5%–10% 是拿 5 年以上的<b>平均</b>，不是每年都稳定这么多。',
     '这里的建议是固定规则算出来的参考，<b>不构成投资建议</b>，买不买、卖不卖由你自己决定。'
   ];
   return `<section class="card risk-card"><div class="card-h"><h3>先说清楚</h3></div>
