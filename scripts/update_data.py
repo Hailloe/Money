@@ -165,32 +165,39 @@ def adjusted_series(nav, acc):
     for p in acc or []:
         if p and len(p) >= 2 and p[1] is not None:
             acc_by[ms_to_date(p[0])] = float(p[1])
-    out, prev_y, prev_d, v = [], None, None, None
+    rows = {}
     for p in nav or []:
         try:
             d, y = ms_to_date(p['x']), float(p['y'])
         except (KeyError, TypeError, ValueError):
             continue
-        if y <= 0:
-            continue
+        if y > 0:
+            rows[d] = (y, p.get('equityReturn'))   # 按日期去重，后面的覆盖前面的
+    out, prev_y, v, ref = [], None, None, None   # ref：上一个单位净值和累计净值都有的日子，用来算这段时间的分红
+    for d in sorted(rows):
+        y, er = rows[d]
+        a1 = acc_by.get(d)
         if v is None:
             v = y
+            if a1 is not None:
+                ref = (y, a1)
         else:
             # 平时用净值和当天分红精确算；和网站给的日增长率差太多（份额折算、拆分）时，用日增长率
             div = 0.0
-            if d in acc_by and prev_d in acc_by:
-                div = max(0.0, (acc_by[d] - acc_by[prev_d]) - (y - prev_y))
+            if a1 is not None and ref is not None:
+                div = max(0.0, (a1 - ref[1]) - (y - ref[0]))   # 中间缺累计净值的日子，分红在这里一起补上
             ratio = (y + div) / prev_y
             try:
-                er = p.get('equityReturn')
                 r_er = 1 + float(er) / 100 if er not in (None, '') else None
             except (TypeError, ValueError):
                 r_er = None
             if r_er is not None and 0.5 < r_er < 1.5 and abs(ratio - r_er) > 0.01:
                 ratio = r_er
             v *= ratio
+        if a1 is not None:
+            ref = (y, a1)
         out.append((d, v))
-        prev_y, prev_d = y, d
+        prev_y = y
     if not out:   # 没有单位净值时退回累计净值
         out = [(d, x) for d, x in sorted(acc_by.items())]
     return out
