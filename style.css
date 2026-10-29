@@ -364,3 +364,7 @@ td .cellname .tag{flex:none}
 .codechip{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);font-weight:400}
 .copybtn{border:0;background:var(--fill);color:var(--brand);border-radius:6px;padding:2px 7px;font:inherit;font-size:12px;cursor:pointer}
 @media (max-width:899px){.copybtn{min-height:30px;padding:4px 9px}}
+.codeline{flex-basis:100%;display:flex}
+.copybtn{white-space:nowrap}
+td .codeline{margin-top:2px}
+.calmmini{text-decoration:none;color:inherit;display:flex}
