@@ -727,7 +727,7 @@ function planNote(A) {
   const out = [];
   if (A.extra > 0) out.push(`估值便宜的类别多买，比平时多出 ${fmt(A.extra)}：用之前贵的月份留在银行卡里的钱；手头紧就只按平时金额买，不用勉强。`);
   if (A.capPool >= 1) out.push(`${(A.capWhy || []).length ? A.capWhy.join('。') + '。' : `限购（或暂停申购）买不进 ${fmt(A.capPool)}。`}${A.capUsed >= A.capPool - 1 ? '买什么见“本月多出来的钱怎么买”。' : A.capUsed >= 1 ? `其中 ${fmt(A.capUsed)} 见“本月多出来的钱怎么买”，剩下的 ${fmt(A.capPool - A.capUsed)} 其他类别不缺、太贵或者额度也满了，先留在银行卡。` : '这个月其他类别不缺、太贵或者额度也满了，先留在银行卡。'}`);
-  if (A.deploy >= 1) out.push(`你银行卡里等着投的钱有 ${fmt(A.reserve)}，攒得比较多了（超过持仓加这笔钱的 ${C.rules.reserveDeployPct || 5}%），${A.deployUsed >= 1 ? `这个月投回去 ${fmt(A.deployUsed)}` : '但这个月没有缺的类别能买，先放着'}。钱一直闲着会拉低收益；一个月最多投回一个月的定投额，慢慢来。`);
+  if (A.deploy >= 1) out.push(`${A.locked ? '本月开始时，' : ''}你银行卡里等着投的钱有 ${fmt(A.reserve)}，攒得比较多了（超过持仓加这笔钱的 ${C.rules.reserveDeployPct || 5}%），${A.deployUsed >= 1 ? `这个月投回去 ${fmt(A.deployUsed)}` : '但这个月没有缺的类别能买，先放着'}。钱一直闲着会拉低收益；一个月最多投回一个月的定投额，慢慢来。`);
   if (A.bank > 0) { const j = P.journal.find(x => x.m === monthKey()); out.push(`这个月有 ${fmt(A.bank)} 没投出去，留在你的银行卡里。${j && j.choice === 'full' ? '已经记到“持仓 → 银行卡里等着投的钱”。' : '打卡“全部照做”时系统会记到“银行卡里等着投的钱”，攒多了再分批投回去。'}`); }
   if (A.parkedWhy.length) out.push(A.parkedWhy.join('。') + '。这些钱留在银行卡里。');
   if (A.plan.some(p => p.cat === 'overseas' && p.note === '限购')) out.push('目前海外基金额度很紧（每天 10–100 元），海外比例会长期低于目标，这是正常的，不用想办法绕开，也不用换高价渠道。股票部分其他类别照常买。');
@@ -1084,7 +1084,7 @@ function addFound() {
   const f = FUND[found.code];
   P.items.push(f ? { code: found.code, amount: v.amount, profit: v.profit } : { code: found.code, name: found.name.slice(0, 40), cat: ($('#found-cat') || {}).value || found.cat, amount: v.amount, profit: v.profit });
   found = null; holdOpen = true; holdEdit = null; holdDel = null; dropDraft('fa-', 'found-', 'code-input');
-  touchPortfolio(); stamp('hold'); render(true); toast(storageOk ? '已保存到持仓' : '浏览器禁止了本地存储，刷新后会丢失');
+  touchPortfolio(); stamp('hold'); render(true); toast(!storageOk ? '浏览器禁止了本地存储，刷新后会丢失' : P.monthPlan && P.monthPlan.ask ? '已保存到持仓。本月计划要不要重算，看页面顶部的提示' : '已保存到持仓');
 }
 function holdRow(it) {
   const f = FUND[it.code], c = esc(it.code), nm = f ? esc(f.short || f.name) : esc(it.name || '其他基金');
@@ -1170,7 +1170,7 @@ function viewMe() {
     ${P.risk && meEdit !== 'quiz' ? `<p>你的结果：<b>${C.levels[lv.base].n}型</b>，${P.risk.score} 分（满分 20）${P.risk.at && !isNaN(Date.parse(P.risk.at)) ? `，${new Date(P.risk.at).toLocaleDateString('zh-CN')} 测评` : ''}。${savedTag('quiz')}</p>
     ${(() => { const okLoss = [5, 10, 20, 30][ans[1]]; if (okLoss == null || lv.short) return '';
       const loss = f => Math.round(C.cats.reduce((a2, c) => a2 + T[c.k] / 100 * (f[c.k] || 0), 0)), big = loss(STRESS[1].f), bear = loss(STRESS[2].f);
-      return `<p class="note">你说一年里最多能接受亏 ${okLoss}%${okLoss >= 30 ? ' 以上' : ''}。按这个档位：几年一次的明显下跌，大约浮亏 ${big}%；遇到 2008 年那样的大熊市，大约浮亏 ${bear}%。${okLoss >= 30 || big <= okLoss ? '和你说的差不多，要做好心理准备。' : `明显下跌时就会超过你说的。如果真遇到会睡不着，在“偏好”里把海外比例调回默认，或者重新测评时第 2 题如实选，宁可少赚。`}</p>`; })()}
+      return `<p class="note">你说一年里最多能接受亏 ${okLoss}%${okLoss >= 30 ? ' 以上' : ''}。按这个档位：几年一次的明显下跌，大约浮亏 ${big}%；遇到 2008 年那样的大熊市，大约浮亏 ${bear}%。${okLoss >= 30 || big <= okLoss ? '和你说的差不多，要做好心理准备。' : `明显下跌时就会超过你说的。如果真遇到会睡不着，${P.prefs.overseasPct ? '在“偏好”里把海外比例调回默认，或者' : ''}重新测评时第 2 题如实选，宁可少赚。`}</p>`; })()}
     <details class="fold"><summary><span>查看我的答案</span><span class="sub">${C.quiz.length} 题</span></summary>
       <ol class="answers">${C.quiz.map((q, qi) => `<li><span class="muted">${esc(q.q)}</span><b>${esc(q.a[ans[qi]] || '—')}</b></li>`).join('')}</ol></details>
     <div class="btnrow"><button class="btn ghost" type="button" data-me="quiz">重新测评</button><span class="note">收入、用钱计划变了再重做。重做会改变系统给你的比例。</span></div>`
