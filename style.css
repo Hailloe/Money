@@ -348,3 +348,5 @@ td .cellname .tag{flex:none}
 .answers{margin:0;padding:8px 0 10px 1.3em;display:grid;gap:8px;font-size:14px}
 .answers li{display:grid;gap:2px}
 #prefs-form{display:grid;gap:12px}
+.resbox{border-top:.5px solid var(--line);margin-top:12px;padding-top:10px;display:grid;gap:4px}
+.donebox{background:var(--fill);border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.6}

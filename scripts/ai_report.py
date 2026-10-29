@@ -116,7 +116,7 @@ def snapshot(data, prev=None):
             conflict = lv['m'] > 1 and (dp >= cap if not was else dp >= cap - PE_MARGIN)
             sig['divLowVol'] = dict(lv, name='红利低波', spread=sp, pct=dp, conflict=conflict, base_m=lv['m'],
                                     m=1 if conflict else lv['m'])
-    # 推荐基金距近一年最高点的回撤（用累计净值曲线）
+    # 推荐基金距近一年最高点的回撤（用复权净值曲线）
     dd = {}
     funds = {f['code']: f for f in data.get('funds', [])}
     for code, cat, short in picks:
@@ -186,7 +186,7 @@ def ai_write(changes, data, key):
     m = data.get('market', {})
     payload = {'日期': NOW.strftime('%Y-%m-%d'), '变化': changes,
                '当前估值': {k: m.get(k) for k in ('hs300', 'divLowVol', 'sp500', 'ndx', 'cgb10y', 'ust10y')},
-               '说明': '买入倍数由网站规则决定：估值越低买得越多，“很贵”时暂停；分批卖出、止盈也由规则决定。'}
+               '说明': '买入倍数由网站规则决定：估值越低买得越多，“很贵”时只买一半；分批卖出、止盈也由规则决定。'}
     body = json.dumps({'model': MODEL, 'temperature': 0.2, 'max_tokens': 500,
                        'messages': [{'role': 'system', 'content': SYSTEM},
                                     {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]}).encode()

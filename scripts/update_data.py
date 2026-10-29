@@ -104,10 +104,9 @@ def fetch_fund(code):
         out['nav'] = round(float(last['y']), 4)
         out['navDate'] = ms_to_date(last['x']).isoformat()
 
-    # 用累计净值算收益（分红已经加回去了）
-    series = [(ms_to_date(p[0]), float(p[1])) for p in acc if p and p[1] is not None]
-    if not series and nav:
-        series = [(ms_to_date(p['x']), float(p['y'])) for p in nav]
+    # 用“复权净值”算收益：分红按再投资算（和指数全收益、支付宝的收益率口径一致）。
+    # 不能直接用累计净值：累计净值 = 单位净值 + 历史分红，分红没有再投资，涨跌百分比会被算小。
+    series = adjusted_series(nav, acc)
 
     money = js_var(src, 'Data_sevenDaysYearIncome')
     if money and not series:  # 货币基金：只有七日年化
@@ -158,6 +157,43 @@ def fetch_fund(code):
     if isinstance(mgr, list) and mgr:
         out['manager'] = '、'.join(m.get('name', '') for m in mgr if m.get('name'))
     return {k: v for k, v in out.items() if v is not None}
+
+
+def adjusted_series(nav, acc):
+    """单位净值 + 每日增长率连乘出复权净值；没有增长率的日子，用累计净值算出当天分红再折算。"""
+    acc_by = {}
+    for p in acc or []:
+        if p and len(p) >= 2 and p[1] is not None:
+            acc_by[ms_to_date(p[0])] = float(p[1])
+    out, prev_y, prev_d, v = [], None, None, None
+    for p in nav or []:
+        try:
+            d, y = ms_to_date(p['x']), float(p['y'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if y <= 0:
+            continue
+        if v is None:
+            v = y
+        else:
+            # 平时用净值和当天分红精确算；和网站给的日增长率差太多（份额折算、拆分）时，用日增长率
+            div = 0.0
+            if d in acc_by and prev_d in acc_by:
+                div = max(0.0, (acc_by[d] - acc_by[prev_d]) - (y - prev_y))
+            ratio = (y + div) / prev_y
+            try:
+                er = p.get('equityReturn')
+                r_er = 1 + float(er) / 100 if er not in (None, '') else None
+            except (TypeError, ValueError):
+                r_er = None
+            if r_er is not None and 0.5 < r_er < 1.5 and abs(ratio - r_er) > 0.01:
+                ratio = r_er
+            v *= ratio
+        out.append((d, v))
+        prev_y, prev_d = y, d
+    if not out:   # 没有单位净值时退回累计净值
+        out = [(d, x) for d, x in sorted(acc_by.items())]
+    return out
 
 
 def fetch_fees(code):
