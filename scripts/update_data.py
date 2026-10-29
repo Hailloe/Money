@@ -193,6 +193,8 @@ def adjusted_series(nav, acc):
                 r_er = None
             if r_er is not None and 0.5 < r_er < 1.5 and abs(ratio - r_er) > 0.01:
                 ratio = r_er
+            elif r_er is None and ratio < 0.7 and a1 is not None and ref is not None and ref[1] > 0:
+                ratio = max(ratio, a1 / ref[1])   # 没有日增长率、又跌得离谱：多半是份额拆分，至少按累计净值的涨跌算
             v *= ratio
         if a1 is not None:
             ref = (y, a1)
