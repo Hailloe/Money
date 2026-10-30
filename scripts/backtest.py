@@ -39,7 +39,7 @@ CAT_T = {'index': 37.0, 'div': 23.0, 'overseas': 15.0, 'bond': 25.0}
 VAL_CODES = {'hs300': 'SH000300', 'divLowVol': 'CSIH30269', 'sp500': 'SP500', 'ndx': 'NDX'}
 CAPS = {'050025': 2000.0, '161130': 200.0}
 BUY_FEE = {'index': 0.0012, 'div': 0.0012, 'overseas': 0.0012, 'bond': 0.0008}
-SELL_FEE = {'index': 0.005, 'div': 0.005, 'overseas': 0.005, 'bond': 0.0}
+SELL_FEE = {'index': 0.0025, 'div': 0.0025, 'overseas': 0.0025, 'bond': 0.0}   # 持有一两年以上大多 0.25% 或更低
 CASH_RATE, BANK_RATE = 0.015, 0.003
 PE_TIERS = [(20, 2.0, False), (40, 1.5, False), (60, 1.0, False), (80, 0.5, False), (101, 0.5, True)]  # 和 config.js 一样
 
@@ -119,7 +119,7 @@ def pe_pct(hist, k, day):
     if not s:
         return None
     start = day - datetime.timedelta(days=3652)
-    past = [v for d, v in s if start <= d <= day]
+    past = [v for d, v in s if start <= d < day]   # 定投日当天收盘的估值还不知道，只用前一天及以前的
     if len(past) < 250 or (day - s[0][0]).days < 365 * 3:
         return None
     now = past[-1]
@@ -150,7 +150,7 @@ class Acct:
     def buy(self, c, cat, amt, px):
         if amt <= 0.005:
             return
-        fee = amt * BUY_FEE[cat]
+        fee = amt * BUY_FEE[cat] / (1 + BUY_FEE[cat])   # 申购费是外扣法
         self.units[c] += (amt - fee) / px[c]
         self.cost[c] += amt
         self.fees += fee
@@ -193,7 +193,8 @@ def trading_days(navs):
     return [d for d, _ in navs['460300'] if d >= first]
 
 
-def run(kind, navs, hist, days, start_idx):
+def run(kind, navs, hist, days, start_idx, same_flows=None, months=None, stop=None):
+    months = months or MONTHS
     a = Acct()
     sim_days = days[start_idx:]
     month_days, seen = [], set()
@@ -202,13 +203,13 @@ def run(kind, navs, hist, days, start_idx):
         if key not in seen and d.day >= 10:
             seen.add(key)
             month_days.append(d)
-    month_days = month_days[:MONTHS]
+    month_days = month_days[:months]
     mset = set(month_days)
     last_rebal, curve = None, []
     cash_val = 0.0
     prev = None
     for d in sim_days:
-        if d > month_days[-1] + datetime.timedelta(days=31):
+        if stop and d > stop:
             break
         px = {c: value_at(navs[c], d) for c in navs}
         # 银行卡、货币基金按天计息
@@ -224,11 +225,16 @@ def run(kind, navs, hist, days, start_idx):
                 a.flows.append((d, -MONTHLY))
             elif kind == 'lump':
                 if i == 0:
-                    tot = MONTHLY * len(month_days)
+                    tot = MONTHLY * len(month_days)  # noqa
                     a.flows.append((d, -tot))
                     for c, cat, w, _ in PICKS:
                         a.buy(c, cat, tot * w / 100, px)
                     last_rebal = d
+            elif kind == 'fixed_same':
+                amt = same_flows.get(d, 0.0)
+                a.flows.append((d, -amt))
+                for c, cat, w, _ in PICKS:
+                    a.buy(c, cat, amt * w / 100, px)
             elif kind in ('fixed', 'rebal'):
                 a.flows.append((d, -MONTHLY))
                 for c, cat, w, _ in PICKS:
@@ -245,7 +251,10 @@ def run(kind, navs, hist, days, start_idx):
     end = curve[-1]
     flows = a.flows + [(end[0], end[1])]
     invested = -sum(v for _, v in a.flows)
-    return summarize(kind, curve, flows, invested, a, end)
+    r = summarize(kind, curve, flows, invested, a, end)
+    r['months'] = len(month_days)
+    r['flowsRaw'] = [(d, -v) for d, v in a.flows]
+    return r
 
 
 def rebalance(a, px):
@@ -278,7 +287,8 @@ def rules_month(a, d, px, hist, capped, i):
     gain = {c: (fv[c] / a.cost[c] - 1) * 100 if a.cost[c] > 0 else 0.0 for c in a.units}
     no_buy = {c for c, cat, *_ in PICKS if cat != 'bond' and sig[c][1] and gain[c] >= 50}
     # 第二步：定投计划
-    plan, parked, bonus, cap_pool = {}, 0.0, 0.0, 0.0
+    plan, parked, bonus, cap_pool, short = {}, 0.0, 0.0, 0.0, {k: 0.0 for k in CAT_T}
+    reserve0 = a.bank   # 月初银行卡里等着投的钱（和网站一样，不含本月少买的）
     for c, cat, w, _ in PICKS:
         b = MONTHLY * w / 100
         m = sig[c][0]
@@ -289,6 +299,7 @@ def rules_month(a, d, px, hist, capped, i):
         amt = b * m
         if amt < b:
             parked += b - amt
+            short[cat] += b - amt   # 估值贵少买、止盈中不买的缺口：本月不让多出来的钱补回
         else:
             bonus += amt - b
         if capped and c in CAPS and amt > CAPS[c]:
@@ -306,19 +317,17 @@ def rules_month(a, d, px, hist, capped, i):
     # 第三步：止盈、减仓（每月卖当前超出的三分之一）
     sold = 0.0
     for c, cat, w, _ in PICKS:
-        if cat == 'bond':
-            continue
-        if sig[c][1] and gain[c] >= 50:
+        if cat != 'bond' and sig[c][1] and gain[c] >= 50:
             sold += a.sell(c, cat, fv[c] * 0.10, px)
         elif total > 0 and dev[cat] >= 5 and sig[c][0] < 1.5:
             share = fv[c] / catv[cat] if catv[cat] else 0
             sold += a.sell(c, cat, dev[cat] / 100 * total * share / 3, px)
     # 第四步：卖出的钱 + 限购剩下的 + 银行卡里该投回的，按缺口分给不贵的类别（偏贵的按倍数打折）
-    reserve = a.bank
+    reserve = max(0.0, reserve0 - from_bank)
     deploy = 0.0
     fund_total = a.value(px)
-    if reserve >= max(100.0, 0.05 * (fund_total + reserve)):
-        deploy = min(reserve, max(MONTHLY, 500.0), max(reserve / 3, min(reserve, 500.0)))
+    if reserve0 >= max(100.0, 0.05 * (fund_total + reserve0)):
+        deploy = min(reserve, max(MONTHLY, 500.0), max(reserve0 / 3, min(reserve0, 500.0)))
     pool = sold + cap_pool + deploy
     if pool > 0.5:
         fv2 = {c: a.units[c] * px[c] for c in a.units}
@@ -328,7 +337,7 @@ def rules_month(a, d, px, hist, capped, i):
             if sig[c][1] or c in no_buy:
                 continue
             cat_have = sum(fv2[x] for x, k, *_ in PICKS if k == cat)
-            cat_need = max(0.0, CAT_T[cat] / 100 * tot2 - cat_have)
+            cat_need = max(0.0, CAT_T[cat] / 100 * tot2 - cat_have - short[cat])
             split = w / CAT_T[cat]
             room = (CAPS[c] - plan[c]) if capped and c in CAPS else float('inf')
             needs[c] = (min(cat_need * split * min(1.0, sig[c][0]), room), cat)
@@ -383,7 +392,15 @@ def summarize(kind, curve, flows, invested, a, end):
     years = {}
     for d, v in tw:
         years.setdefault(d.year, [v, v])[1] = v
-    yr = {y: round((b / a_ - 1) * 100, 1) for y, (a_, b) in years.items()}
+    yr, base = {}, 1.0
+    for y in sorted(years):   # 用上一年最后一天做基数，不漏掉跨年那天的涨跌
+        yr[y] = round((years[y][1] / base - 1) * 100, 1)
+        base = years[y][1]
+    span = (tw[-1][0] - tw[0][0]).days / 365.25 if len(tw) > 1 else 0
+    twr = (tw[-1][1] ** (1 / span) - 1) * 100 if span > 0 else None
+    # 期末总财富：假设所有要投的钱一开始都在货币基金里，没投出去之前按 1.5% 计息（这样一次性买入和定投才能比）
+    t0 = flows[0][0]
+    wait_interest = sum(-v * ((1 + CASH_RATE) ** ((d - t0).days / 365.0) - 1) for d, v in flows[:-1])
     return {
         'kind': kind,
         'xirr': None if r is None else round(r * 100, 2),
@@ -396,8 +413,10 @@ def summarize(kind, curve, flows, invested, a, end):
         'bankEnd': round(a.bank),
         'bankShare': round(a.bank / end[1] * 100, 1) if end[1] else 0,
         'fees': round(a.fees),
+        'twrAnnual': None if twr is None else round(twr, 2),
+        'wealth': round(end[1] + wait_interest),
         'years': yr,
-        'curve': [[d.isoformat(), round(v)] for d, v in curve[::5]],
+        'curve': [[d.isoformat(), round(v)] for d, v in (curve[::5] + ([curve[-1]] if (len(curve) - 1) % 5 else []))],
     }
 
 
@@ -413,9 +432,40 @@ def main():
     want = datetime.date(last.year - (MONTHS // 12), last.month, 1)
     start_idx = next((i for i, d in enumerate(days) if d >= want), 0)
     notes = n1 + n2
-    if days[start_idx] > want:
-        notes.append(f'数据最早只到 {days[start_idx]}，回测没有满 {MONTHS} 个月')
+
     res = {k: run(k, navs, hist, days, start_idx) for k in ['cash', 'fixed', 'rebal', 'rules', 'rules_cap', 'lump']}
+    # 公平对比：和规则版同一天、投同样多的钱，只是按固定比例买
+    same = {}
+    for d, v in res['rules']['flowsRaw']:
+        same[d] = same.get(d, 0.0) + v
+    res['fixed_same'] = run('fixed_same', navs, hist, days, start_idx, same)
+    for r in res.values():
+        r.pop('flowsRaw', None)
+    # 滚动回测：每个季度换一个起点，各跑 3 年，看规则版和“同样的钱死定投”谁赚得多（只看一条 5 年路径不够）
+    rolling = []
+    y, m = days[0].year, ((days[0].month - 1) // 3) * 3 + 1
+    while True:
+        st = datetime.date(y, m, 1)
+        stop = datetime.date(y + 3, m, 1)
+        if stop > last:
+            break
+        si = next((i for i, d in enumerate(days) if d >= st), None)
+        if si is None:
+            break
+        r1 = run('rules', navs, hist, days, si, months=36, stop=stop)
+        sm = {}
+        for d, v in r1['flowsRaw']:
+            sm[d] = sm.get(d, 0.0) + v
+        r2 = run('fixed_same', navs, hist, days, si, sm, months=36, stop=stop)
+        rolling.append({'start': st.isoformat(), 'rules': r1['final'], 'fixedSame': r2['final'], 'invested': r1['invested'],
+                        'rulesXirr': r1['xirr'], 'fixedXirr': r2['xirr'], 'diff': r1['final'] - r2['final']})
+        m += 3
+        if m > 12:
+            y, m = y + 1, m - 12
+    nm = res['fixed']['months']
+    if nm < MONTHS:
+        notes.append(f'数据不够，只定投了 {nm} 个月（计划 {MONTHS} 个月）')
+    notes.append('逐年收益里，第一年只有开始以后的几个月，最后一年只到数据最后一天')
     funds = {}
     for c, cat, *_ in PICKS:
         s = [(d, v) for d, v in navs[c] if d >= days[start_idx]]
@@ -426,19 +476,22 @@ def main():
     out = {'generated': U.NOW.strftime('%Y-%m-%d %H:%M'), 'start': days[start_idx].isoformat(), 'end': last.isoformat(),
            'months': MONTHS, 'monthly': MONTHLY, 'weights': {c: w for c, _, w, _ in PICKS}, 'notes': notes,
            'peHistory': {k: [hist[k][0][0].isoformat(), hist[k][-1][0].isoformat(), len(hist[k])] for k in hist}, 'pePctNow': pe_now,
-           'results': res, 'funds': funds}
+           'results': res, 'funds': funds, 'rolling3y': rolling}
     path = OUT if not offline else OUT.replace('.json', '-offline.json')
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, indent=1)
     print(f"回测 {out['start']} ~ {out['end']}，每月 {MONTHLY:.0f} 元")
     for n in notes:
         print('注意：', n)
-    print(f"{'买法':<10}{'年化':>8}{'投入':>9}{'期末':>9}{'最大回撤':>9}{'最差12月':>9}{'最多浮亏':>9}{'银行卡占比':>10}")
+    print(f"{'买法':<11}{'年化XIRR':>9}{'组合年化':>9}{'期末总财富':>10}{'投入':>9}{'期末':>9}{'最大回撤':>9}{'最差12月':>9}{'最多浮亏':>9}{'银行卡占比':>10}")
     for k, r in res.items():
-        print(f"{k:<10}{str(r['xirr']):>8}{r['invested']:>9}{r['final']:>9}{r['maxDd']:>9}{str(r['worst12m']):>9}{r['worstFloat']:>9}{r['bankShare']:>10}")
+        print(f"{k:<11}{str(r['xirr']):>9}{str(r['twrAnnual']):>9}{r['wealth']:>10}{r['invested']:>9}{r['final']:>9}{r['maxDd']:>9}{str(r['worst12m']):>9}{r['worstFloat']:>9}{r['bankShare']:>10}")
     for c, v in funds.items():
         print(c, v)
     print('估值历史：', out['peHistory'], '现在分位：', pe_now)
+    if rolling:
+        wins = sum(1 for r in rolling if r['diff'] > 0)
+        print(f"滚动 3 年：{len(rolling)} 个起点，规则版赢 {wins} 次；差额 {min(r['diff'] for r in rolling)} ~ {max(r['diff'] for r in rolling)} 元")
 
 
 if __name__ == '__main__':
