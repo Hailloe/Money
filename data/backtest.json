@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-30 15:24",
+ "generated": "2026-10-30 15:26",
  "start": "2021-10-08",
  "end": "2026-10-29",
  "months": 60,
@@ -56,7 +56,7 @@
    "bankShare": 0.0,
    "fees": 0,
    "twrAnnual": 1.5,
-   "wealth": 64628,
+   "wealth": 64687,
    "years": {
     "2021": 0.3,
     "2022": 1.5,
@@ -1070,7 +1070,7 @@
    "bankShare": 0.0,
    "fees": 66,
    "twrAnnual": 3.96,
-   "wealth": 72265,
+   "wealth": 72324,
    "years": {
     "2021": 0.1,
     "2022": -8.3,
@@ -2084,7 +2084,7 @@
    "bankShare": 0.0,
    "fees": 78,
    "twrAnnual": 3.83,
-   "wealth": 71981,
+   "wealth": 72040,
    "years": {
     "2021": 0.1,
     "2022": -8.1,
@@ -3098,7 +3098,7 @@
    "bankShare": 5.4,
    "fees": 97,
    "twrAnnual": 3.81,
-   "wealth": 86864,
+   "wealth": 86935,
    "years": {
     "2021": -2.3,
     "2022": -7.2,
@@ -4112,7 +4112,7 @@
    "bankShare": 4.5,
    "fees": 99,
    "twrAnnual": 3.77,
-   "wealth": 86734,
+   "wealth": 86805,
    "years": {
     "2021": -2.3,
     "2022": -7.2,
@@ -6140,7 +6140,7 @@
    "bankShare": 0.0,
    "fees": 78,
    "twrAnnual": 3.97,
-   "wealth": 86621,
+   "wealth": 86692,
    "years": {
     "2021": 0.1,
     "2022": -8.3,
@@ -7167,57 +7167,57 @@
  "rolling3y": [
   {
    "start": "2020-04-01",
-   "rules": 43793,
-   "fixedSame": 43569,
-   "invested": 42155,
-   "rulesXirr": 2.81,
-   "fixedXirr": 2.43,
-   "diff": 224
+   "rules": 44361,
+   "fixedSame": 44253,
+   "invested": 42600,
+   "rulesXirr": 2.93,
+   "fixedXirr": 2.75,
+   "diff": 108
   },
   {
    "start": "2020-07-01",
-   "rules": 44257,
-   "fixedSame": 44080,
-   "invested": 42547,
-   "rulesXirr": 2.85,
-   "fixedXirr": 2.56,
-   "diff": 177
+   "rules": 43160,
+   "fixedSame": 43301,
+   "invested": 41763,
+   "rulesXirr": 2.38,
+   "fixedXirr": 2.62,
+   "diff": -141
   },
   {
    "start": "2020-10-01",
-   "rules": 44349,
-   "fixedSame": 44158,
-   "invested": 43194,
-   "rulesXirr": 1.88,
-   "fixedXirr": 1.57,
-   "diff": 191
+   "rules": 43729,
+   "fixedSame": 43730,
+   "invested": 42720,
+   "rulesXirr": 1.66,
+   "fixedXirr": 1.66,
+   "diff": -1
   },
   {
    "start": "2021-01-01",
-   "rules": 45348,
-   "fixedSame": 45441,
-   "invested": 45144,
-   "rulesXirr": 0.32,
-   "fixedXirr": 0.46,
-   "diff": -93
+   "rules": 44239,
+   "fixedSame": 44357,
+   "invested": 44063,
+   "rulesXirr": 0.28,
+   "fixedXirr": 0.47,
+   "diff": -118
   },
   {
    "start": "2021-04-01",
-   "rules": 48859,
-   "fixedSame": 48794,
-   "invested": 46029,
-   "rulesXirr": 4.15,
-   "fixedXirr": 4.05,
-   "diff": 65
+   "rules": 47931,
+   "fixedSame": 47885,
+   "invested": 45164,
+   "rulesXirr": 4.18,
+   "fixedXirr": 4.11,
+   "diff": 46
   },
   {
    "start": "2021-07-01",
-   "rules": 49859,
-   "fixedSame": 49881,
-   "invested": 46315,
-   "rulesXirr": 4.97,
-   "fixedXirr": 5.0,
-   "diff": -22
+   "rules": 48972,
+   "fixedSame": 49020,
+   "invested": 45533,
+   "rulesXirr": 4.99,
+   "fixedXirr": 5.06,
+   "diff": -48
   },
   {
    "start": "2021-10-01",
