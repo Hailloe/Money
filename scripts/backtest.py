@@ -120,7 +120,7 @@ def pe_pct(hist, k, day):
         return None
     start = day - datetime.timedelta(days=3652)
     past = [v for d, v in s if start <= d < day]   # 定投日当天收盘的估值还不知道，只用前一天及以前的
-    if len(past) < 250 or (day - s[0][0]).days < 365 * 3:
+    if len(past) < 150 or (day - s[0][0]).days < 365 * 3:   # 蛋卷是周度数据：至少 3 年历史（约 150 个点）
         return None
     now = past[-1]
     return 100.0 * sum(1 for v in past if v < now) / len(past)
@@ -400,7 +400,8 @@ def summarize(kind, curve, flows, invested, a, end):
     twr = (tw[-1][1] ** (1 / span) - 1) * 100 if span > 0 else None
     # 期末总财富：假设所有要投的钱一开始都在货币基金里，没投出去之前按 1.5% 计息（这样一次性买入和定投才能比）
     t0 = flows[0][0]
-    wait_interest = sum(-v * ((1 + CASH_RATE) ** ((d - t0).days / 365.0) - 1) for d, v in flows[:-1])
+    T = flows[-1][0]   # 每笔钱从第一天到投出去那天的利息，投出去以后到期末也接着算利息
+    wait_interest = sum(-v * ((1 + CASH_RATE) ** ((T - t0).days / 365.0) - (1 + CASH_RATE) ** ((T - d).days / 365.0)) for d, v in flows[:-1])
     return {
         'kind': kind,
         'xirr': None if r is None else round(r * 100, 2),
