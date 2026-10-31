@@ -472,7 +472,7 @@ function analyze() {
       const amt = Math.round(excess / R.sellMonths);
       a = i.cat === 'cash'
         ? { k: 'move', t: '转出补仓', amt, excess, why: [`余额宝里放了 ${w2.cash.toFixed(0)}%，目标 ${T.cash}%，闲置太多。`] }   // 金额在下面按“能买多少”再定
-        : { k: 'sell', t: '减仓', amt, why: [`${c.n}${dev2[i.cat] < dev[i.cat] - 0.5 ? '（扣掉正在卖出的基金后）' : ''}占 ${w2[i.cat].toFixed(0)}%，目标 ${T[i.cat]}%，超了 ${ovD(i.cat).toFixed(0)} 个百分点。本月不再买这一类。`, `超出的共 ${fmt(excess)}，分 ${R.sellMonths} 个月卖，这个月卖 ${fmt(amt)}，钱按下面“本月多出来的钱怎么买”去买。`] };
+        : { k: 'sell', t: '减仓', amt, why: [`${c.n}${dev2[i.cat] < dev[i.cat] - 0.5 ? '（扣掉正在卖出的基金后）' : ''}${valOn() ? `占 ${w2[i.cat].toFixed(0)}%` : `这个月的钱投进去以后约占 ${(ovD(i.cat) + T[i.cat]).toFixed(0)}%`}，目标 ${T[i.cat]}%，多了 ${ovD(i.cat).toFixed(0)} 个百分点。本月不再买这一类。`, `超出的共 ${fmt(excess)}，分 ${R.sellMonths} 个月卖，这个月卖 ${fmt(amt)}，钱按下面“本月多出来的钱怎么买”去买。`] };
     } else if (c.eq && sig.top && !((planFor(i.code) || {}).amt >= 1)) {
       a = { k: 'stop', t: '暂停买入', amt: 0, why: [`这个月计划里买不了它（限购、暂停申购或已经满 ${maxN} 只），拿着不动。现在估值${sig.t}（${valText(i.cat, f)}）。`, pp < R.takeProfitPct ? (pp < 0 ? `目前亏 ${Math.abs(pp).toFixed(0)}%，不要在贵的时候加仓摊低成本，拿着等。` : `目前赚 ${pp.toFixed(0)}%，没到 ${R.takeProfitPct}% 的止盈线，不用卖。`) : ''] };
     } else {
@@ -831,7 +831,7 @@ function viewHome(A) {
       <div class="card-h"><h3>资产配置</h3><span class="sub">现在 / 目标</span></div>
       <div class="donutwrap">${donut(segs, 136, 18, '股票类', Math.round(A.eqW) + '%')}
         <div class="legend">${C.cats.filter(c => A.T[c.k] > 0 || A.byCat[c.k] > 0).map(c => `<div class="li">${dot(c.k)}<span>${c.n}</span><span class="n">${A.w[c.k].toFixed(0)}%</span><span class="n faint">${A.T[c.k]}%</span></div>`).join('')}</div></div>
-      ${(() => { const off = C.cats.filter(c => Math.abs(A.dev[c.k]) >= C.rules.rebalanceBand); return A.total ? (off.length ? `<p class="note">偏离目标超过 ${C.rules.rebalanceBand} 个百分点：${off.map(c => `${c.n}${A.dev[c.k] > 0 ? '多' : '少'} ${Math.abs(A.dev[c.k]).toFixed(0)} 个点`).join('，')}。</p>` : '<p class="note">各类比例都在目标附近。</p>') : ''; })()}
+      ${(() => { const off = C.cats.filter(c => Math.abs(A.dev[c.k]) >= C.rules.rebalanceBand); return A.total ? (off.length ? `<p class="note">现在偏离目标超过 ${C.rules.rebalanceBand} 个百分点：${off.map(c => `${c.n}${A.dev[c.k] > 0 ? '多' : '少'} ${Math.abs(A.dev[c.k]).toFixed(0)} 个点`).join('，')}。${valOn() ? '' : '要不要少买或减仓，按这个月的钱投进去以后的比例算，所以和买卖分析里的数字可能差几个点。'}</p>` : '<p class="note">各类比例都在目标附近。</p>') : ''; })()}
       ${A.total ? `<div class="tbox"><table><thead><tr><th>类别</th><th class="r">金额</th><th class="r">占比</th><th class="r">目标</th><th class="r">持有收益</th></tr></thead><tbody>${C.cats.filter(c => A.byCat[c.k] > 0 || A.T[c.k] > 0).map(c => `<tr><td>${dot(c.k)} ${c.n}</td><td class="r">${fmt(A.byCat[c.k])}</td><td class="r">${A.w[c.k].toFixed(1)}%</td><td class="r faint">${A.T[c.k]}%</td><td class="r ${cls(A.pByCat[c.k])}">${signed(A.pByCat[c.k])}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </section>
     <section class="card" aria-label="市场温度">
@@ -886,7 +886,7 @@ function viewAnalysis(A) {
       ${A.plan.map(p => `<tr><td><span class="cellname">${dot(p.cat)}<a href="#fund-${p.fund.code}" class="plain">${esc(p.fund.short || p.fund.name)}</a>${p.note ? `<span class="tag">${esc(p.note)}</span>` : ''}</span><div class="sub codeline">${codeChip(p.fund.code)}</div>${capLine(A, p.fund, 'plan')}</td>${valOn() ? `<td>${p.note === '已超配' ? '<span class="act hold">不买</span>' : sigChip(p.sig)}</td><td class="r">${p.note === '限购' ? '买满' : p.note === '暂停申购' ? '暂停' : p.m + '×'}</td>` : ''}<td class="r strong">${fmt(p.amt)}</td></tr>`).join('')}
       <tr><td colspan="${valOn() ? 3 : 1}"><b>合计</b></td><td class="r strong">${fmt(A.planTotal)}</td></tr></tbody></table></div>
     ${P.ledger && !P.example ? `<div class="btnrow"><button class="btn ghost" type="button" data-ledger="plan">在支付宝买完了，按计划一键记账</button></div>` : ''}
-    ${planNote(A)}<p class="note">${valOn() ? `规则（估值规则已打开）：便宜的类别多买，贵的少买（很贵也买一半，不完全停），限购或暂停申购的买不进，已经超配的本月不买；某类比目标少 ${C.rules.catchUpBand} 个点以上且不贵时，额外多买 0.5 倍。` : `规则：每月按比例买，不看估值。某类比目标多出 ${C.rules.rebalanceBand} 个点以上，这个月不买它，这份钱转去买比例不够的类别；多得太多，分 ${C.rules.sellMonths} 个月卖掉多的部分。想按估值多买少买，到“我的 → 偏好”打开估值规则。`}</p>
+    ${planNote(A)}<p class="note">${valOn() ? `规则（估值规则已打开）：便宜的类别多买，贵的少买（很贵也买一半，不完全停），限购或暂停申购的买不进，已经超配的本月不买；某类比目标少 ${C.rules.catchUpBand} 个点以上且不贵时，额外多买 0.5 倍。` : `规则：每月按比例买，不看估值。某类比目标多出 ${C.rules.rebalanceBand} 个点以上（按这个月的钱投进去以后算），这个月不买它，这份钱转去买比例不够的类别；多得太多，分 ${C.rules.sellMonths} 个月卖掉多的部分。想按估值多买少买，到“我的 → 偏好”打开估值规则。`}</p>
   </section>
   ${stressCard(A)}
   <details class="more-sec" id="ana-more"><summary>更多：AI 解读、市场估值、逐年涨跌、同类对比</summary><div class="more-in">
@@ -917,7 +917,7 @@ function viewAnalysis(A) {
       <div class="stat"><span class="k">纳指100 估值分位</span><span class="v n">${M.ndx && M.ndx.pePct10y != null ? Math.round(M.ndx.pePct10y) + '%' : '—'}</span></div>
       <div class="stat"><span class="k">美国10年国债</span><span class="v n">${M.ust10y && M.ust10y.yield != null ? M.ust10y.yield + '%' : '—'}</span></div>
     </div>
-    <p class="note">海外按标普500、纳指100 各自的估值分位决定买多少，规则和 A 股一样。QDII 基金常有限购，买不满的部分留在银行卡。</p>
+    <p class="note">${valOn() ? '海外按标普500、纳指100 各自的估值分位决定买多少，规则和 A 股一样。' : ''}QDII 基金常有限购，买不满的部分转去买其他比例不够的类别。</p>
   </section>
   ${(M.hs300Hist && M.hs300Hist.length) || (M.divLowVolHist && M.divLowVolHist.length) ? `<div class="grid2">
     <section class="card"><div class="card-h"><h3>沪深300 逐年涨跌</h3><span class="sub">${M.hs300HistSrc === '联接基金净值' ? '按联接基金净值' : '指数'}，红涨绿跌</span></div>${yearBars(M.hs300Hist)}</section>
