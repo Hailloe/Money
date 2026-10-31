@@ -155,10 +155,10 @@ def diff(prev, cur):
             continue
         if p['t'] != s['t']:
             extra = f"（近10年 {int(s['pct'] + 0.5)}% 分位）" if k != 'divLowVol' and s.get('pct') is not None else (f"（息差 {s['spread']} 个百分点）" if k == 'divLowVol' else '')
-            mult = f"，每月买入倍数从 {p['m']:g} 倍变为 {s['m']:g} 倍" if p['m'] != s['m'] else '，买入倍数不变'
+            mult = f"（打开了估值规则的话，每月买入倍数从 {p['m']:g} 倍变为 {s['m']:g} 倍）" if p['m'] != s['m'] else ''
             out.append(('tier', f"{s['name']}估值从“{p['t']}”变成“{s['t']}”{extra}{mult}"))
         elif k == 'divLowVol' and p.get('conflict') != s.get('conflict'):
-            out.append(('tier', f"红利低波自身估值分位{'升到' if s['conflict'] else '回落到'} {int((s['pct'] or 0) + 0.5)}%，和息差信号{'打架，买入倍数从 ' + format(p['m'], 'g') + ' 倍降到 1 倍' if s['conflict'] else '不再打架，按息差恢复到 ' + format(s['m'], 'g') + ' 倍'}"))
+            out.append(('tier', f"红利低波自身估值分位{'升到' if s['conflict'] else '回落到'} {int((s['pct'] or 0) + 0.5)}%（打开了估值规则的话，{'买入倍数最多 1 倍' if s['conflict'] else '按息差恢复到 ' + format(s['m'], 'g') + ' 倍'}）"))
     alerted = prev.get('ddAlerted', {})
     for code, d in cur['dd'].items():
         if dd_due(d, alerted.get(code)):
@@ -170,7 +170,7 @@ def diff(prev, cur):
 
 ENDINGS = {
     'stale': '数据可能不准，先别按页面建议操作，等数据恢复。',
-    'tier': '每月买入金额已按规则自动调整，照“本月定投计划”执行即可，不需要额外操作。',
+    'tier': '默认按比例买，估值变化只是参考，不影响你的计划；打开了估值规则的，页面上的定投计划已经自动调整。照“本月定投计划”执行即可，不需要额外操作。',
     'dd': '这是正常波动，规则不变，照常定投，不用卖。',
     'ddbond': '债券基金很少跌这么多，先到天天基金看看这只基金有没有关于信用风险的公告，暂时不用卖。'
 }
@@ -186,7 +186,7 @@ def ai_write(changes, data, key):
     m = data.get('market', {})
     payload = {'日期': NOW.strftime('%Y-%m-%d'), '变化': changes,
                '当前估值': {k: m.get(k) for k in ('hs300', 'divLowVol', 'sp500', 'ndx', 'cgb10y', 'ust10y')},
-               '说明': '买入倍数由网站规则决定：估值越低买得越多，“很贵”时只买一半；分批卖出、止盈也由规则决定。'}
+               '说明': '网站默认按比例每月定投，不看估值；用户可以在偏好里打开估值规则（估值越低买得越多，“很贵”时只买一半，很贵且赚 50% 分批止盈）。提醒里不要让用户自己改金额，照页面上的“本月定投计划”执行。'}
     body = json.dumps({'model': MODEL, 'temperature': 0.2, 'max_tokens': 500,
                        'messages': [{'role': 'system', 'content': SYSTEM},
                                     {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]}).encode()
