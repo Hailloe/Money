@@ -587,7 +587,7 @@ function cleanSnap(sn) {
 function applySnap(A, sn) {
   const ok = c => FUND[c];
   if (!sn.plan.every(r => ok(r.code)) || !(sn.reinvest || []).every(r => ok(r.code))) return A;
-  const B = Object.assign({}, A, { live: A, locked: sn.at, lockedVal: sn.val === true });
+  const B = Object.assign({}, A, { live: A, locked: sn.at, lockedVal: sn.val !== false });
   SNAP_NUMS.forEach(k => { B[k] = +sn.n[k] || 0; });
   B.plan = sn.plan.map(r => Object.assign({}, r, { fund: FUND[r.code], sig: r.sig || sigOf(r.cat, FUND[r.code]) }));
   B.reinvest = (sn.reinvest || []).map(r => Object.assign({}, r, { fund: FUND[r.code] }));
