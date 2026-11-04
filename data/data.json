@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-04 04:34",
+ "updated": "2026-11-04 12:51",
  "market": {
   "bondNote": "2026 年长端利率上行，接近一半的中长期纯债基金今年没有赚到钱，所以债券部分以短久期为主。",
   "hs300": {
@@ -24,27 +24,27 @@
   "hs300Hist": [
    {
     "year": 2021,
-    "ret": -5.2
+    "ret": -3.77
    },
    {
     "year": 2022,
-    "ret": -21.63
+    "ret": -19.39
    },
    {
     "year": 2023,
-    "ret": -11.38
+    "ret": -9.46
    },
    {
     "year": 2024,
-    "ret": 14.68
+    "ret": 14.93
    },
    {
     "year": 2025,
-    "ret": 17.66
+    "ret": 18.86
    },
    {
     "year": 2026,
-    "ret": -13.41,
+    "ret": -10.79,
     "label": "2026至今",
     "note": "今年以来"
    }
@@ -52,50 +52,50 @@
   "divLowVolHist": [
    {
     "year": 2021,
-    "ret": 10.8
+    "ret": 18.1
    },
    {
     "year": 2022,
-    "ret": -1.9
+    "ret": 2.72
    },
    {
     "year": 2023,
-    "ret": 6.45
+    "ret": 10.7
    },
    {
     "year": 2024,
-    "ret": 17.84
+    "ret": 21.05
    },
    {
     "year": 2025,
-    "ret": 0.44
+    "ret": 4.2
    },
    {
     "year": 2026,
-    "ret": 0.85,
+    "ret": 5.31,
     "label": "2026至今",
     "note": "今年以来"
    }
   ],
   "sp500": {
-   "pe": 23.79,
-   "pePct10y": 41.6,
+   "pe": 23.7,
+   "pePct10y": 40.0,
    "dy": 1.05,
-   "date": "2026-11-02",
+   "date": "2026-11-03",
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
   "ndx": {
-   "pe": 27.36,
-   "pePct10y": 27.0,
-   "dy": 0.46,
-   "date": "2026-11-02",
+   "pe": 27.18,
+   "pePct10y": 25.5,
+   "dy": 0.47,
+   "date": "2026-11-03",
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
-  "hs300HistSrc": "指数",
-  "divLowVolHistSrc": "指数",
+  "hs300HistSrc": "联接基金净值",
+  "divLowVolHistSrc": "联接基金净值",
   "ust10y": {
-   "yield": 4.91,
-   "date": "2026-11-02",
+   "yield": 4.95,
+   "date": "2026-11-03",
    "src": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"
   }
  },
@@ -3932,9 +3932,11 @@
    ],
    "manager": "柳军",
    "salesFee": 0.0,
-   "buyStatus": "开放申购",
+   "buyStatus": "限大额",
    "feeDate": "2026-11-04",
-   "statusText": "交易状态： 开放申购   开放赎回 购买手续费： 1.20%   0.12%   1 折 费率详情&gt; 成立日期： 2019-07-15 基金经理：   柳军 类型： 指数型-股票 管理人： 华泰柏瑞基金 净资产规模： 75.22亿元"
+   "statusText": "交易状态： 限大额 （ 单日累计购买上限1000.00万元 ） 开放赎回 购买手续费： 1.20%   0.12%   1 折 费率详情&gt; 成立日期： 2019-07-15 基金经理：   柳军 类型： 指数型-股票 管理人： 华泰柏",
+   "buyCap": 10000000.0,
+   "limit": "单日限购 1,000 万元"
   },
   {
    "code": "050025",
@@ -8038,7 +8040,7 @@
   "valuation": "ok",
   "cgb10y": "ok",
   "ust10y": "ok",
-  "hs300Hist": "ok",
-  "divLowVolHist": "ok"
+  "hs300Hist": "failed (用联接基金代替): Remote end closed connection without response",
+  "divLowVolHist": "failed (用联接基金代替): Remote end closed connection without response"
  }
 }
