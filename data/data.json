@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-21 05:55",
+ "updated": "2026-11-21 13:38",
  "market": {
   "bondNote": "2026 年长端利率上行，接近一半的中长期纯债基金今年没有赚到钱，所以债券部分以短久期为主。",
   "hs300": {
@@ -78,17 +78,17 @@
    }
   ],
   "sp500": {
-   "pe": 22.14,
-   "pePct10y": 20.8,
-   "dy": 1.11,
-   "date": "2026-11-19",
+   "pe": 22.37,
+   "pePct10y": 21.8,
+   "dy": 1.1,
+   "date": "2026-11-20",
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
   "ndx": {
-   "pe": 25.0,
-   "pePct10y": 12.2,
+   "pe": 25.46,
+   "pePct10y": 15.3,
    "dy": 0.51,
-   "date": "2026-11-19",
+   "date": "2026-11-20",
    "src": "https://danjuanfunds.com/djmodule/value-center"
   },
   "hs300HistSrc": "指数",
