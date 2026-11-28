@@ -29,10 +29,10 @@ fi
 
 # 数据另备份一份到 NAS（MONEY_NAS_DIR 由 plist 设置；NAS 没挂载就跳过）
 if [ -n "${MONEY_NAS_DIR:-}" ]; then
-  if [ -d "$(dirname "$MONEY_NAS_DIR")" ]; then
-    mkdir -p "$MONEY_NAS_DIR" && cp -p data/*.json "$MONEY_NAS_DIR"/ && echo "已备份到 NAS：$MONEY_NAS_DIR"
+  if [ -d "$MONEY_NAS_DIR" ]; then
+    cp -p data/*.json "$MONEY_NAS_DIR"/ && echo "已备份到 NAS：$MONEY_NAS_DIR"
   else
-    echo "NAS 没挂载，本次没备份"
+    echo "NAS 没挂载（或没有 $MONEY_NAS_DIR 文件夹），本次没备份"
   fi
 fi
 
