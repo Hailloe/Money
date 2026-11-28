@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-28 12:34",
+ "updated": "2026-11-28 12:37",
  "market": {
   "bondNote": "2026 年长端利率上行，接近一半的中长期纯债基金今年没有赚到钱，所以债券部分以短久期为主。",
   "hs300": {
@@ -97,6 +97,24 @@
    "yield": 4.94,
    "date": "2026-11-27",
    "src": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"
+  },
+  "usEtf": {
+   "SPY": {
+    "close": 728.68,
+    "date": "2026-11-27",
+    "chg1d": 1.67,
+    "ret1y": 8.96,
+    "offHigh": -6.47,
+    "src": "https://www.nasdaq.com/market-activity/etf/spy"
+   },
+   "QQQ": {
+    "close": 650.99,
+    "date": "2026-11-27",
+    "chg1d": 2.69,
+    "ret1y": 7.57,
+    "offHigh": -14.31,
+    "src": "https://www.nasdaq.com/market-activity/etf/qqq"
+   }
   }
  },
  "funds": [
@@ -8006,6 +8024,8 @@
   "valuation": "ok",
   "cgb10y": "ok",
   "ust10y": "ok",
+  "usEtf:SPY": "ok",
+  "usEtf:QQQ": "ok",
   "hs300Hist": "ok",
   "divLowVolHist": "ok"
  }

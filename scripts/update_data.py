@@ -303,6 +303,26 @@ def fetch_ust10y():
     raise RuntimeError('; '.join(errors))
 
 
+def fetch_us_etf(sym):
+    """美股 ETF（SPY、QQQ）近一年日线收盘价，来自纳斯达克官网接口。只用来看，不参与买卖规则。"""
+    start = (NOW.date() - datetime.timedelta(days=370)).isoformat()
+    src = get(f'https://api.nasdaq.com/api/quote/{sym}/historical?assetclass=etf&fromdate={start}&limit=400',
+              referer='https://www.nasdaq.com/')
+    rows = json.loads(src)['data']['tradesTable']['rows']
+    pts = sorted((datetime.datetime.strptime(r['date'], '%m/%d/%Y').date(), float(r['close'].replace('$', '').replace(',', '')))
+                 for r in rows)
+    # 历史接口常晚一两天，最新收盘价用报价接口补上
+    q = json.loads(get(f'https://api.nasdaq.com/api/quote/{sym}/info?assetclass=etf', referer='https://www.nasdaq.com/'))['data']['primaryData']
+    last = (datetime.datetime.strptime(q['lastTradeTimestamp'][:12].strip(), '%b %d, %Y').date(),
+            float(q['lastSalePrice'].replace('$', '').replace(',', '')))
+    if last[0] > pts[-1][0]:
+        pts.append(last)
+    (d0, c0), (d1, c1) = pts[0], pts[-1]
+    high = max(c for _, c in pts)
+    return {'close': round(c1, 2), 'date': d1.isoformat(), 'chg1d': pct(c1, pts[-2][1]), 'ret1y': pct(c1, c0),
+            'offHigh': pct(c1, high), 'src': f'https://www.nasdaq.com/market-activity/etf/{sym.lower()}'}
+
+
 def fetch_cgb10y():
     url = ('https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPTA_WEB_TREASURYYIELD'
            '&columns=SOLAR_DATE,EMM00166466&sortColumns=SOLAR_DATE&sortTypes=-1&pageSize=1&pageNumber=1')
@@ -404,6 +424,12 @@ def main():
         status['ust10y'] = 'ok'
     except Exception as e:  # noqa: BLE001
         status['ust10y'] = f'failed: {e}'
+    for sym in ('SPY', 'QQQ'):
+        try:
+            market.setdefault('usEtf', {})[sym] = fetch_us_etf(sym)
+            status[f'usEtf:{sym}'] = 'ok'
+        except Exception as e:  # noqa: BLE001
+            status[f'usEtf:{sym}'] = f'failed: {e}'
     by_code = {f['code']: f for f in funds}
     for key, secid, proxy in (('hs300Hist', '1.000300', '006131'), ('divLowVolHist', '2.H30269', '007466')):
         try:

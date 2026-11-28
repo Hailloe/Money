@@ -918,6 +918,13 @@ function viewAnalysis(A) {
       <div class="stat"><span class="k">美国10年国债</span><span class="v n">${M.ust10y && M.ust10y.yield != null ? M.ust10y.yield + '%' : '—'}</span></div>
     </div>
     <p class="note">${valOn() ? '海外按标普500、纳指100 各自的估值分位决定买多少，规则和 A 股一样。' : ''}QDII 基金常有限购，买不满的部分转去买其他比例不够的类别。</p>
+    ${M.usEtf ? `<div class="card-h" style="margin-top:12px"><h3 style="font-size:15px">美股 ETF</h3><span class="sub">只看行情，支付宝买不了，不影响买卖建议</span></div>
+    <div class="stats">${['SPY', 'QQQ'].filter(k => M.usEtf[k]).map(k => { const e = M.usEtf[k], cls = v => v > 0 ? 'up' : v < 0 ? 'down' : ''; return `
+      <div class="stat"><span class="k">${k} 收盘（美元）</span><span class="v n">${e.close}</span><span class="k ${cls(e.chg1d)}">当天 ${signed(e.chg1d, 2)}% · ${cnDate(e.date)}</span></div>
+      <div class="stat"><span class="k">${k} 近1年</span><span class="v n ${cls(e.ret1y)}">${signed(e.ret1y, 1)}%</span></div>
+      <div class="stat"><span class="k">${k} 离一年最高点</span><span class="v n">${signed(e.offHigh, 1)}%</span></div>`; }).join('')}
+    </div>
+    <p class="note">SPY 跟标普500，QQQ 跟纳指100，和上面的联接基金是同一个指数。数据来自纳斯达克官网，美股收盘后更新。</p>` : ''}
   </section>
   ${(M.hs300Hist && M.hs300Hist.length) || (M.divLowVolHist && M.divLowVolHist.length) ? `<div class="grid2">
     <section class="card"><div class="card-h"><h3>沪深300 逐年涨跌</h3><span class="sub">${M.hs300HistSrc === '联接基金净值' ? '按联接基金净值' : '指数'}，红涨绿跌</span></div>${yearBars(M.hs300Hist)}</section>

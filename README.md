@@ -220,6 +220,7 @@
 ### 本地定时更新（Mac）
 数据由 Mac 定时更新。GitHub Actions 的“更新基金数据”已在 GitHub 上停用（`gh workflow disable update-data.yml`），要恢复用 `gh workflow enable update-data.yml`。
 - `scripts/update_local.sh`：拉取最新代码 → `update_data.py` 抓数据 → `ai_report.py` 盯盘 → 有变化就以 money-bot 名义提交并推送到 GitHub（网站从 GitHub 读数据）→ 把 `data/*.json` 复制一份到 NAS（`MONEY_NAS_DIR`，NAS 没挂载就跳过）
+- 美股 ETF（SPY、QQQ）：`update_data.py` 的 `fetch_us_etf()` 从纳斯达克官网接口抓近一年收盘价，写进 `market.usEtf`（收盘价、当天涨跌、近1年、离一年最高点）。显示在“买卖分析 → 更多 → 市场估值”，只看行情，不参与买卖规则（支付宝买不了）
 - 定时：`~/Library/LaunchAgents/com.money.update-data.plist`（不在仓库里），北京时间交易日 22:30 和第二天 08:00；plist 里按 Mac 本地时区（UTC+7）写成 21:30 和 07:00，换时区要改
 - 推送用 `gh` 的登录（`gh auth setup-git`）；Python 用 `~/.local/bin/python3.12`
 - 停用：`launchctl bootout gui/$(id -u)/com.money.update-data`；启用：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.money.update-data.plist`
