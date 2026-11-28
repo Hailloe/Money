@@ -73,7 +73,7 @@
 
 **原则：持续盯着，但只在真正有变化时才说话，不天天写文章。**
 
-- **自动盯盘（不用开网站）**：每次 GitHub 更新数据后运行 `scripts/ai_report.py`，和上次的状态对比：
+- **自动盯盘（不用开网站）**：每次更新数据后运行 `scripts/ai_report.py`，和上次的状态对比：
   1. 沪深300、标普500、纳指100 的估值档位变化；红利低波息差档位变化（档位阈值读自 `config.js` 的 `rules`，和网页同一套）
   2. 红利低波两个信号开始打架或不再打架（`divPeCap`）
   3. 推荐基金从近一年最高点回撤超过 15%；之后每再加深 10 个百分点才再提醒，回撤修复到 7.5% 以内后重置
@@ -81,7 +81,7 @@
   - 没有变化：不调用 AI，只记“上次检查”时间；有变化：DeepSeek 写一条 150 字以内的提醒（没设密钥时用规则文字）
   - 结果在 `data/ai-report.json`：`checked` 上次检查时间，`state` 上次的信号状态，`history` 最近 60 条提醒
   - 第一次运行只记录状态，不发提醒
-  - 开启 AI 写提醒：仓库 **Settings → Secrets and variables → Actions → New repository secret**，名字 `DEEPSEEK_API_KEY`
+  - 开启 AI 写提醒：在 Mac 上建 `~/.config/money/env`，写一行 `export DEEPSEEK_API_KEY=你的密钥`（只在本机，不进仓库）；在 GitHub 手动跑时用仓库 Secrets 里的 `DEEPSEEK_API_KEY`
 - **网页里的 AI**：我的 → AI 助手，填 DeepSeek API key（只保存在这台设备浏览器的 `money.ai`，不进备份，不上传）
   - 买卖分析页：“让 AI 解读本月建议”、直接提问、盯盘历史提醒；基金详情页：“问 AI 这只基金”
   - 自动解读：打开网站时，只有操作建议变了（按每只基金的建议生成“指纹”对比），或者到了每月定投日，才重新解读
@@ -215,11 +215,18 @@
 1. 在 `config.js` 的 `funds` 里加一项（写清楚 `code`、`cat`、`why`、`risk`、`exit`），推荐的加 `pick: true` 和 `split`；海外基金还要写 `val: 'sp500'` 或 `val: 'ndx'`
    - `why` / `risk` / `exit` 里不要写具体数字（比如“近 3 年涨了 13%”），数字会变，页面上的数字由数据自动生成
 2. 费率和限购不用手填：脚本每天从天天基金费率页（`fundf10.eastmoney.com/jjfl_代码.html`）抓管理费 `mgmtFee`、托管费 `custFee`、销售服务费 `salesFee`、申购状态 `buyStatus`、单日限购 `buyCap` / `limit`。抓不到时用上次的数据，再没有才用 `data/seed.json` 里手填的。只在“交易状态”后面一小段里找限额；明确写“开放申购”才清掉限购，“暂停申购”又没写上限时当作这个月买不了。同一指数的推荐基金限购时，不建议把备选基金换过去
-3. 到 GitHub 仓库的 **Actions → 更新基金数据 → Run workflow** 手动跑一次，新基金的数据就有了
+3. 在 Mac 上运行 `bash scripts/update_local.sh` 一次，新基金的数据就有了
+
+### 本地定时更新（Mac）
+数据由 Mac 定时更新。GitHub Actions 的“更新基金数据”已在 GitHub 上停用（`gh workflow disable update-data.yml`），要恢复用 `gh workflow enable update-data.yml`。
+- `scripts/update_local.sh`：拉取最新代码 → `update_data.py` 抓数据 → `ai_report.py` 盯盘 → 有变化就以 money-bot 名义提交并推送到 GitHub（网站从 GitHub 读数据）→ 把 `data/*.json` 复制一份到 NAS（`MONEY_NAS_DIR`，NAS 没挂载就跳过）
+- 定时：`~/Library/LaunchAgents/com.money.update-data.plist`（不在仓库里），北京时间交易日 22:30 和第二天 08:00；plist 里按 Mac 本地时区（UTC+7）写成 21:30 和 07:00，换时区要改
+- 推送用 `gh` 的登录（`gh auth setup-git`）；Python 用 `~/.local/bin/python3.12`
+- 停用：`launchctl bootout gui/$(id -u)/com.money.update-data`；启用：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.money.update-data.plist`
 
 ### 数据好几天没更新
-推荐基金净值日期的中位数、或者沪深300 估值日期，超过 5 个工作日（`staleWeekdays`）没变时，看板顶部会出现黄色提示；后台盯盘按 10 个自然日（`staleDays`）发断更提醒。到 **Actions** 页面看最近一次运行的日志，`data.json` 里的 `status` 字段会写明哪个数据源失败。
-脚本对每个数据源单独处理，失败时保留上一次的数字；基金净值全部失败或指数估值失败时，任务会标红，GitHub 会发邮件提醒。
+推荐基金净值日期的中位数、或者沪深300 估值日期，超过 5 个工作日（`staleWeekdays`）没变时，看板顶部会出现黄色提示；后台盯盘按 10 个自然日（`staleDays`）发断更提醒。看 Mac 上的日志 `~/Library/Logs/money-update.log`，`data.json` 里的 `status` 字段会写明哪个数据源失败。Mac 关机或一直睡眠时不会更新，唤醒后会补跑一次。
+脚本对每个数据源单独处理，失败时保留上一次的数字；基金净值全部失败或指数估值失败时，日志最后会写“有关键数据源抓取失败”。
 
 目前已知：东方财富的指数月线接口在 GitHub 的服务器上连不通，所以“沪深300 / 红利低波 逐年涨跌”暂时用对应联接基金（006131、007466）的净值涨跌代替，页面上会标明“按联接基金净值”。
 
